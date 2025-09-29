@@ -8,6 +8,147 @@ function ViewReport({ reportId }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [dispatchResult] = useState(null)
+  const [aiRecommendations, setAiRecommendations] = useState(null)
+  const [aiLoading, setAiLoading] = useState(false)
+
+  // Generate AI recommendations using Gemini API
+  const generateAIRecommendations = async (crimeType, description) => {
+    try {
+      setAiLoading(true)
+      
+      // Enhanced prompt that analyzes both crime type and description
+      const prompt = `As an emergency response AI assistant, analyze this crime report in detail and provide 3 specific recommendations for the admin:
+
+CRIME TYPE: ${crimeType}
+INCIDENT DESCRIPTION: ${description}
+
+Please analyze the description carefully and consider:
+- Severity and urgency of the incident
+- Specific details mentioned (weapons, injuries, suspects, etc.)
+- Location context and potential risks
+- Evidence mentioned or available
+- Witnesses or victims involved
+
+Provide exactly 3 recommendations in this JSON format:
+{
+  "recommendations": [
+    {
+      "type": "Priority",
+      "score": 85,
+      "title": "Specific Priority Action",
+      "description": "Detailed recommendation based on the specific incident details and urgency level"
+    },
+    {
+      "type": "Investigation", 
+      "score": 75,
+      "title": "Investigation Strategy",
+      "description": "Specific investigation steps based on the evidence and details mentioned in the description"
+    },
+    {
+      "type": "Follow-up",
+      "score": 65,
+      "title": "Follow-up Protocol", 
+      "description": "Follow-up actions tailored to the specific incident and parties involved"
+    }
+  ]
+}
+
+Focus on practical admin actions that address the specific details mentioned in the description.`
+
+      console.log('Sending AI request with prompt:', prompt)
+      
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyC9EZicsv9_W5JVVgHisolse3bXIn5OPf4`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 1024,
+          }
+        })
+      })
+
+      console.log('AI API Response status:', response.status)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('AI API Error Response:', errorText)
+        throw new Error(`AI API Error: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('AI API Response data:', data)
+      
+      if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+        const aiResponse = data.candidates[0].content.parts[0].text
+        console.log('AI Response text:', aiResponse)
+        
+        // Try to extract JSON from the response
+        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const recommendations = JSON.parse(jsonMatch[0])
+          console.log('Parsed recommendations:', recommendations)
+          setAiRecommendations(recommendations.recommendations)
+        } else {
+          console.error('No JSON found in AI response:', aiResponse)
+          throw new Error('Invalid AI response format - no JSON found')
+        }
+      } else {
+        console.error('Invalid AI response structure:', data)
+        throw new Error('No valid response from AI - invalid structure')
+      }
+    } catch (error) {
+      console.error('Error generating AI recommendations:', error)
+      
+      // Enhanced fallback that analyzes description content
+      console.log('Using fallback recommendations due to API error')
+      
+      // Analyze description for key details
+      const descriptionLower = description.toLowerCase()
+      const hasWeapon = descriptionLower.includes('weapon') || descriptionLower.includes('gun') || descriptionLower.includes('knife') || descriptionLower.includes('bat') || descriptionLower.includes('blade')
+      const hasInjury = descriptionLower.includes('injured') || descriptionLower.includes('hurt') || descriptionLower.includes('wound') || descriptionLower.includes('bleeding') || descriptionLower.includes('hospital')
+      const hasSuspect = descriptionLower.includes('suspect') || descriptionLower.includes('person') || descriptionLower.includes('man') || descriptionLower.includes('woman') || descriptionLower.includes('individual')
+      const hasVictim = descriptionLower.includes('victim') || descriptionLower.includes('child') || descriptionLower.includes('kid') || descriptionLower.includes('person')
+      const isUrgent = hasWeapon || hasInjury || descriptionLower.includes('emergency') || descriptionLower.includes('urgent')
+      
+      // Generate description-aware recommendations
+      const priorityScore = isUrgent ? 95 : 85
+      const investigationScore = hasSuspect ? 90 : 75
+      const followupScore = hasVictim ? 85 : 70
+      
+      setAiRecommendations([
+        {
+          type: "Priority",
+          score: priorityScore,
+          title: isUrgent ? "High Priority Response Required" : "Standard Response Required",
+          description: `Based on the ${crimeType} incident${hasWeapon ? ' involving weapons' : ''}${hasInjury ? ' with reported injuries' : ''}, ${isUrgent ? 'dispatch emergency units immediately' : 'dispatch appropriate units'} and secure the scene.`
+        },
+        {
+          type: "Investigation",
+          score: investigationScore,
+          title: hasSuspect ? "Suspect Investigation Priority" : "Evidence Collection",
+          description: `${hasSuspect ? 'Focus on suspect identification and apprehension. ' : ''}Gather evidence related to the ${crimeType} incident${hasVictim ? ' and ensure victim safety' : ''}. Interview witnesses and document all findings.`
+        },
+        {
+          type: "Follow-up",
+          score: followupScore,
+          title: hasVictim ? "Victim Support & Documentation" : "Administrative Review",
+          description: `${hasVictim ? 'Provide victim support services and ensure proper medical attention if needed. ' : ''}Complete comprehensive documentation of the ${crimeType} incident and follow up with the reporting individual.`
+        }
+      ])
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   // Fetch report data from Firebase
   useEffect(() => {
@@ -70,6 +211,11 @@ function ViewReport({ reportId }) {
             status: data.status || 'Unknown',
             multimedia: data.multimedia || []
           })
+
+          // Generate AI recommendations based on crime type and description
+          const crimeType = data.crimeType || 'Unknown'
+          const description = data.description || 'No description provided'
+          generateAIRecommendations(crimeType, description)
         } else {
           setError('Report not found')
         }
@@ -131,7 +277,6 @@ function ViewReport({ reportId }) {
     <div className="page-content">
       <div className="report-header">
         <h1>View Report</h1>
-        <div className="report-id">Report ID: {reportData.reportId}</div>
       </div>
       
       <div className="report-layout">
@@ -325,34 +470,42 @@ function ViewReport({ reportId }) {
 
         <div className="ai-recommendations">
           <h2>AI Response Recommendations</h2>
-          <div className="recommendations-list">
-            <div className="recommendation-card">
-              <div className="recommendation-header">
-                <span className="recommendation-type">Priority</span>
-                <span className="recommendation-score">95%</span>
+          {aiLoading ? (
+            <div className="recommendations-list">
+              <div className="recommendation-card">
+                <div className="recommendation-header">
+                  <span className="recommendation-type">Loading...</span>
+                  <span className="recommendation-score">--%</span>
+                </div>
+                <h3>Generating AI Analysis...</h3>
+                <p>Please wait while AI analyzes the crime report and generates recommendations.</p>
               </div>
-              <h3>Immediate Response Required</h3>
-              <p>This theft incident involves personal property and should be prioritized for immediate investigation. Recommend dispatching patrol unit within 30 minutes.</p>
             </div>
-            
-            <div className="recommendation-card">
-              <div className="recommendation-header">
-                <span className="recommendation-type">Investigation</span>
-                <span className="recommendation-score">87%</span>
+          ) : aiRecommendations ? (
+            <div className="recommendations-list">
+              {aiRecommendations.map((rec, index) => (
+                <div key={index} className="recommendation-card">
+                  <div className="recommendation-header">
+                    <span className="recommendation-type">{rec.type}</span>
+                    <span className="recommendation-score">{rec.score}%</span>
+                  </div>
+                  <h3>{rec.title}</h3>
+                  <p>{rec.description}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="recommendations-list">
+              <div className="recommendation-card">
+                <div className="recommendation-header">
+                  <span className="recommendation-type">Error</span>
+                  <span className="recommendation-score">--%</span>
+                </div>
+                <h3>Unable to Generate Recommendations</h3>
+                <p>There was an error generating AI recommendations. Please try refreshing the page.</p>
               </div>
-              <h3>Evidence Collection Strategy</h3>
-              <p>Security camera footage mentioned in description. Recommend collecting and analyzing CCTV recordings from nearby businesses for suspect identification.</p>
             </div>
-            
-            <div className="recommendation-card">
-              <div className="recommendation-header">
-                <span className="recommendation-type">Follow-up</span>
-                <span className="recommendation-score">78%</span>
-              </div>
-              <h3>Witness Interview Protocol</h3>
-              <p>Contact the reporting individual for additional details about the stolen items and any suspicious activity noticed before the incident.</p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

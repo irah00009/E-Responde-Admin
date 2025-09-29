@@ -1,3 +1,8 @@
+/* Global styles */
+body {
+  overflow-x: hidden;
+}
+
 /* App Layout */
 .app {
   display: flex;
@@ -31,38 +36,56 @@
 }
 
 .user-info {
-  margin-top: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  gap: 1rem;
+  padding: 0;
 }
 
 .user-info span {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.9);
+  padding: 0.5rem 0;
 }
 
 .user-info span:first-child {
   font-weight: 600;
   color: white;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: center;
 }
 
 .logout-btn {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fecaca;
-  margin-top: auto;
-  transition: all 0.2s ease;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border: none;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .logout-btn:hover {
-  background: rgba(239, 68, 68, 0.3);
-  color: white;
-  border-color: rgba(239, 68, 68, 0.5);
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.logout-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .sidebar-nav {
@@ -74,6 +97,7 @@
   padding: 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: auto;
+  background: rgba(0, 0, 0, 0.1);
 }
 
 .nav-item {
@@ -111,9 +135,10 @@
 .main-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 2rem;
   margin-left: 250px;
-  width: calc(100vw - 250px);
+  max-width: calc(100vw - 250px);
 }
 
 .page-content h1 {

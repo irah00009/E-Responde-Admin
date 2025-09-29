@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getDatabase, ref, get, update } from 'firebase/database'
+import { getFirestore, collection, getDocs } from 'firebase/firestore'
 import { app } from '../firebase'
 import './Dispatch.css'
 
@@ -9,12 +10,92 @@ function Dispatch() {
   const [error, setError] = useState('')
   const [selectedReport, setSelectedReport] = useState(null)
   const [showDispatchModal, setShowDispatchModal] = useState(false)
+  const [patrolUnits, setPatrolUnits] = useState([])
+  const [sortedPatrolUnits, setSortedPatrolUnits] = useState([])
   const [dispatchData, setDispatchData] = useState({
     unit: '',
     priority: 'medium',
     notes: '',
     estimatedTime: ''
   })
+
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance in kilometers
+    return distance;
+  }
+
+  // Sort patrol units by distance to crime location
+  const sortPatrolUnitsByDistance = (units, crimeLat, crimeLon) => {
+    if (!crimeLat || !crimeLon) {
+      return units; // Return unsorted if no crime location
+    }
+
+    return units.map(unit => {
+      const unitLat = parseFloat(unit.Latitude || unit.latitude || 0);
+      const unitLon = parseFloat(unit.Longitude || unit.longitude || 0);
+      
+      if (unitLat && unitLon) {
+        const distance = calculateDistance(crimeLat, crimeLon, unitLat, unitLon);
+        return { ...unit, distance: distance };
+      } else {
+        return { ...unit, distance: 999999 }; // Put units without location at the end
+      }
+    }).sort((a, b) => a.distance - b.distance);
+  }
+
+  // Fetch patrol units from Firestore
+  const fetchPatrolUnits = async () => {
+    try {
+      console.log('Starting to fetch patrol units...')
+      const db = getFirestore(app)
+      const patrolUnitsRef = collection(db, 'patrol_units')
+      console.log('Firestore reference created for patrol_units collection')
+      
+      const snapshot = await getDocs(patrolUnitsRef)
+      console.log('Snapshot received:', snapshot)
+      console.log('Number of documents:', snapshot.size)
+      
+      const units = []
+      snapshot.forEach((doc) => {
+        console.log('Processing document:', doc.id, doc.data())
+        const data = doc.data()
+        const unit = {
+          id: doc.id,
+          policeId: data.Police_ID || data.police_id || data.policeId || data.policeID || 'Unknown',
+          status: data.Status || data.status || 'Unknown',
+          ...data
+        }
+        units.push(unit)
+        console.log('Added unit:', unit)
+      })
+      
+      setPatrolUnits(units)
+      console.log('Patrol units loaded successfully:', units)
+      
+      // If no units found, show a message
+      if (units.length === 0) {
+        console.warn('No patrol units found in Firestore collection "patrol_units"')
+        console.log('Please check your Firestore collection and field names')
+      }
+    } catch (err) {
+      console.error('Error fetching patrol units:', err)
+      console.error('Error details:', err.message)
+      console.error('Error code:', err.code)
+      
+      // Show error message instead of fallback
+      console.log('Failed to load patrol units from Firestore. Please check console for errors.')
+      setPatrolUnits([])
+    }
+  }
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -49,11 +130,43 @@ function Dispatch() {
     }
 
     fetchReports()
+    fetchPatrolUnits()
   }, [])
 
   const handleDispatchReport = (report) => {
     setSelectedReport(report)
     setShowDispatchModal(true)
+    
+    // Sort patrol units by distance to crime location
+    if (report.location?.latitude && report.location?.longitude) {
+      const crimeLat = parseFloat(report.location.latitude);
+      const crimeLon = parseFloat(report.location.longitude);
+      const sortedUnits = sortPatrolUnitsByDistance(patrolUnits, crimeLat, crimeLon);
+      setSortedPatrolUnits(sortedUnits);
+      console.log('Patrol units sorted by distance:', sortedUnits);
+    } else {
+      setSortedPatrolUnits(patrolUnits);
+      console.log('No crime location found, using unsorted patrol units');
+    }
+    
+    // Reset form data
+    setDispatchData({
+      unit: '',
+      priority: 'medium',
+      notes: '',
+      estimatedTime: ''
+    })
+  }
+
+  const handleCloseModal = () => {
+    setShowDispatchModal(false)
+    setSelectedReport(null)
+    setDispatchData({
+      unit: '',
+      priority: 'medium',
+      notes: '',
+      estimatedTime: ''
+    })
   }
 
   const handleDispatchSubmit = async () => {
@@ -82,7 +195,7 @@ function Dispatch() {
       
       // Update local state
       setReports(prev => prev.filter(report => report.id !== selectedReport.id))
-      setShowDispatchModal(false)
+      handleCloseModal()
       setSelectedReport(null)
       setDispatchData({
         unit: '',
@@ -251,7 +364,7 @@ function Dispatch() {
               <h3>Dispatch Response Unit</h3>
               <button 
                 className="close-btn"
-                onClick={() => setShowDispatchModal(false)}
+                onClick={handleCloseModal}
               >
                 ×
               </button>
@@ -268,13 +381,25 @@ function Dispatch() {
               <div className="dispatch-form">
                 <div className="form-group">
                   <label>Response Unit *</label>
-                  <input
-                    type="text"
+                  {sortedPatrolUnits.length > 0 && sortedPatrolUnits[0].distance !== undefined && (
+                    <small style={{ color: '#10b981', fontSize: '0.8rem', marginBottom: '0.5rem', display: 'block' }}>
+                      🎯 Units sorted by proximity to crime location
+                    </small>
+                  )}
+                  <select
                     value={dispatchData.unit}
                     onChange={(e) => setDispatchData({...dispatchData, unit: e.target.value})}
-                    placeholder="e.g., Unit Alpha-1, Patrol Car 42"
                     required
-                  />
+                  >
+                    <option value="">Select a patrol unit...</option>
+                    {(sortedPatrolUnits.length > 0 ? sortedPatrolUnits : patrolUnits).map((unit, index) => (
+                      <option key={unit.id} value={unit.policeId}>
+                        {unit.policeId} - {unit.status}
+                        {unit.distance !== undefined ? ` (${unit.distance.toFixed(1)} km away)` : ''}
+                        {index === 0 && unit.distance !== undefined ? ' 🎯' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">
@@ -314,7 +439,7 @@ function Dispatch() {
             <div className="modal-footer">
               <button 
                 className="btn-cancel"
-                onClick={() => setShowDispatchModal(false)}
+                onClick={handleCloseModal}
               >
                 Cancel
               </button>

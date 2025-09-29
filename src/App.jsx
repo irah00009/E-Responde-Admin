@@ -130,7 +130,6 @@ function App() {
         </nav>
         <div className="sidebar-footer">
           <div className="user-info">
-            <span>{user.email}</span>
             <button onClick={handleLogout} className="logout-btn">Logout</button>
           </div>
         </div>

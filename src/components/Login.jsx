@@ -97,7 +97,7 @@ function Login({ onLoginSuccess }) {
             {loading ? (
               <>
                 <div style={{width: '16px', height: '16px', border: '2px solid transparent', borderTop: '2px solid white', borderRadius: '50%', animation: 'spin 1s linear infinite', marginRight: '0.5rem'}}></div>
-                Signing in...
+                Logging in...
               </>
             ) : (
               <>
@@ -106,7 +106,7 @@ function Login({ onLoginSuccess }) {
                   <polyline points="10,17 15,12 10,7"></polyline>
                   <line x1="15" y1="12" x2="3" y2="12"></line>
                 </svg>
-                Sign In
+                Login
               </>
             )}
           </button>
