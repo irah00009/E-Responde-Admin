@@ -1,24 +1,88 @@
-import { useState } from 'react'
-import { dispatchUnit, predictSeverity } from '../services/aiDispatch'
+import { useState, useEffect } from 'react'
+import { getDatabase, ref, get } from 'firebase/database'
+import { app } from '../firebase'
+import './ViewReport.css'
 
-function ViewReport() {
-  const reportData = {
-    reportId: "RPT-2024-001",
-    type: "Theft",
-    dateReported: "2024-01-15",
-    location: "123 Main St, Downtown, City",
-    reportedBy: {
-      name: "John Smith",
-      phone: "+1 (555) 123-4567",
-      email: "john.smith@email.com"
-    },
-    description: "Vehicle break-in reported in downtown area. The suspect broke into a parked car and stole personal belongings including a laptop and wallet. The incident occurred between 2:00 AM and 4:00 AM. Security camera footage shows a male suspect wearing dark clothing.",
-    status: "Under Review"
-  };
-
-  const [dispatchResult, setDispatchResult] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
+function ViewReport({ reportId }) {
+  const [reportData, setReportData] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [dispatchResult] = useState(null)
+
+  // Fetch report data from Firebase
+  useEffect(() => {
+    const fetchReportData = async () => {
+      if (!reportId) {
+        setError('No report ID provided')
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        const db = getDatabase(app)
+        const reportRef = ref(db, `civilian/civilian crime reports/${reportId}`)
+        const snapshot = await get(reportRef)
+        
+        if (snapshot.exists()) {
+          const data = snapshot.val()
+          
+          // Fetch reporter information from civilian account
+          let reporterInfo = {
+            name: 'Anonymous',
+            phone: 'Not provided',
+            email: 'Not provided'
+          }
+          
+          if (data.reporterUid) {
+            try {
+              const reporterRef = ref(db, `civilian/civilian account/${data.reporterUid}`)
+              const reporterSnapshot = await get(reporterRef)
+              
+              if (reporterSnapshot.exists()) {
+                const reporterData = reporterSnapshot.val()
+                reporterInfo = {
+                  name: `${reporterData.firstName || ''} ${reporterData.lastName || ''}`.trim() || 'Anonymous',
+                  phone: reporterData.contactNumber || 'Not provided',
+                  email: reporterData.email || 'Not provided'
+                }
+              }
+            } catch (reporterErr) {
+              console.error('Error fetching reporter info:', reporterErr)
+              // Keep default values if reporter fetch fails
+            }
+          }
+          
+          // Debug multimedia data
+          console.log('Multimedia data:', data.multimedia)
+          
+          setReportData({
+            reportId: data.reportId || reportId,
+            type: data.crimeType || 'Unknown',
+            dateReported: data.dateTime || data.createdAt,
+            location: data.location?.address || 'No location provided',
+            coordinates: {
+              latitude: data.location?.latitude || null,
+              longitude: data.location?.longitude || null
+            },
+            reportedBy: reporterInfo,
+            description: data.description || 'No description provided',
+            status: data.status || 'Unknown',
+            multimedia: data.multimedia || []
+          })
+        } else {
+          setError('Report not found')
+        }
+      } catch (err) {
+        console.error('Error fetching report:', err)
+        setError('Failed to load report data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchReportData()
+  }, [reportId])
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -30,27 +94,37 @@ function ViewReport() {
     });
   };
 
-  const handleDispatch = async () => {
-    setIsLoading(true)
-    setError('')
-    setDispatchResult(null)
-    try {
-      const inferred = await predictSeverity(reportData.type)
-      // sample coordinates for demo; replace with actual report coords
-      const latitude = 14.5995
-      const longitude = 120.9842
-      const res = await dispatchUnit({
-        crimeType: reportData.type,
-        latitude,
-        longitude,
-        severity: inferred?.severity
-      })
-      setDispatchResult(res)
-    } catch (e) {
-      setError(e.message || 'Dispatch failed')
-    } finally {
-      setIsLoading(false)
-    }
+  // AI dispatch removed; no action buttons rendered.
+
+  if (loading) {
+    return (
+      <div className="page-content">
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <h2>Loading report...</h2>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page-content">
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <h2>Error</h2>
+          <p style={{ color: 'red' }}>{error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!reportData) {
+    return (
+      <div className="page-content">
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <h2>No report data available</h2>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -111,54 +185,129 @@ function ViewReport() {
 
           <div className="report-section">
             <h2>Location Map</h2>
-            <div className="map-placeholder">
-              <div className="map-content">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                  <circle cx="12" cy="10" r="3"></circle>
-                </svg>
-                <p>Map showing report location</p>
-                <small>123 Main St, Downtown, City</small>
-              </div>
+            <div className="map-container">
+              {reportData.coordinates.latitude && reportData.coordinates.longitude ? (
+                <div className="map-content">
+                  <iframe
+                    width="100%"
+                    height="300"
+                    style={{ border: 0, borderRadius: '8px' }}
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${reportData.coordinates.longitude-0.01},${reportData.coordinates.latitude-0.01},${reportData.coordinates.longitude+0.01},${reportData.coordinates.latitude+0.01}&layer=mapnik&marker=${reportData.coordinates.latitude},${reportData.coordinates.longitude}`}
+                    allowFullScreen
+                    title="Report Location Map"
+                  ></iframe>
+                  <div className="map-info">
+                    <p><strong>Coordinates:</strong> {reportData.coordinates.latitude}, {reportData.coordinates.longitude}</p>
+                    <p><strong>Address:</strong> {reportData.location}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="map-placeholder">
+                  <div className="map-content">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                      <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    <p>Location coordinates not available</p>
+                    <small>{reportData.location}</small>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="report-section">
             <h2>Evidence Photos</h2>
             <div className="evidence-grid">
-              <div className="evidence-placeholder">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21,15 16,10 5,21"></polyline>
-                </svg>
-                <span>Photo 1</span>
-              </div>
-              <div className="evidence-placeholder">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21,15 16,10 5,21"></polyline>
-                </svg>
-                <span>Photo 2</span>
-              </div>
-              <div className="evidence-placeholder">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21,15 16,10 5,21"></polyline>
-                </svg>
-                <span>Photo 3</span>
-              </div>
+              {reportData.multimedia && reportData.multimedia.length > 0 ? (
+                reportData.multimedia.map((media, index) => {
+                  console.log(`Media ${index}:`, media)
+                  return (
+                  <div key={index} className="evidence-item">
+                    {media.includes('file://') ? (
+                      <div className="evidence-placeholder">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21,15 16,10 5,21"></polyline>
+                        </svg>
+                        <span>Photo {index + 1}</span>
+                        <small>Mobile app file</small>
+                        <div className="file-info">
+                          <small>Path: {media.split('/').pop()}</small>
+                        </div>
+                      </div>
+                    ) : media.startsWith('data:image/') ? (
+                      <div className="evidence-photo">
+                        <img 
+                          src={media} 
+                          alt={`Evidence photo ${index + 1}`}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                        <div className="evidence-placeholder" style={{ display: 'none' }}>
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21,15 16,10 5,21"></polyline>
+                          </svg>
+                          <span>Photo {index + 1}</span>
+                          <small>Failed to load</small>
+                        </div>
+                      </div>
+                    ) : media.includes('firebase') || media.includes('http') ? (
+                      <div className="evidence-photo">
+                        <img 
+                          src={media} 
+                          alt={`Evidence photo ${index + 1}`}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'flex';
+                          }}
+                        />
+                        <div className="evidence-placeholder" style={{ display: 'none' }}>
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21,15 16,10 5,21"></polyline>
+                          </svg>
+                          <span>Photo {index + 1}</span>
+                          <small>Failed to load</small>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="evidence-placeholder">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21,15 16,10 5,21"></polyline>
+                        </svg>
+                        <span>Photo {index + 1}</span>
+                        <small>Unknown format</small>
+                        <div className="file-info">
+                          <small>{media.substring(0, 50)}...</small>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  )
+                })
+              ) : (
+                <div className="no-evidence">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21,15 16,10 5,21"></polyline>
+                  </svg>
+                  <p>No evidence photos available</p>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="report-actions">
-            <button className="btn-cancel">Cancel</button>
-            <button className="btn-update-report" onClick={handleDispatch} disabled={isLoading}>
-              {isLoading ? 'Dispatching…' : 'AI Dispatch Unit'}
-            </button>
-          </div>
+          {/* Action buttons removed as requested */}
           {error && (
             <div className="report-section" style={{ marginTop: '1rem', borderLeft: '4px solid #ef4444' }}>
               <p style={{ color: '#b91c1c', margin: 0 }}>Error: {error}</p>
