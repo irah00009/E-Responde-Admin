@@ -1,5 +1,65 @@
 /* Dashboard Styles */
 
+/* Filter Card Styles */
+.filter-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.filter-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.15);
+}
+
+.filter-card.active {
+  border: 2px solid #667eea;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(102, 126, 234, 0.3);
+}
+
+.filter-card.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+}
+
+.filter-card.active h3 {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.filter-card.active .stat {
+  color: #667eea;
+  font-weight: 700;
+}
+
+/* Section Header Styles */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  border-bottom: 2px solid #334155;
+  padding-bottom: 0.5rem;
+}
+
+
 /* Update Status Modal */
 .modal-overlay {
   position: fixed;
@@ -15,25 +75,26 @@
 }
 
 .modal-content {
-  background: white;
+  background: #1e293b;
   padding: 2rem;
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
   max-width: 500px;
   width: 90%;
   max-height: 80vh;
   overflow-y: auto;
+  border: 1px solid #334155;
 }
 
 .modal-content h3 {
   margin: 0 0 1rem 0;
-  color: #2d3748;
+  color: #f1f5f9;
   font-size: 1.5rem;
 }
 
 .modal-content p {
   margin: 0.5rem 0;
-  color: #4a5568;
+  color: #e2e8f0;
 }
 
 .status-options {
@@ -45,10 +106,10 @@
 
 .status-btn {
   padding: 1rem 1.5rem;
-  border: 2px solid #e2e8f0;
+  border: 2px solid #334155;
   border-radius: 8px;
-  background: white;
-  color: #4a5568;
+  background: #1e293b;
+  color: #e2e8f0;
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
@@ -57,7 +118,7 @@
 
 .status-btn:hover:not(:disabled) {
   border-color: #667eea;
-  background: #f7fafc;
+  background: #334155;
   transform: translateY(-1px);
 }
 
@@ -101,7 +162,7 @@
 
 .updating-text {
   text-align: center;
-  color: #667eea;
+  color: #94a3b8;
   font-style: italic;
   margin-top: 1rem;
 }

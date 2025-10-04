@@ -9,19 +9,40 @@ function Dashboard({ onNavigateToReport }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({
-    activeIncidents: 0,
+    receivedReports: 0,
     pendingReports: 0,
     resolvedReports: 0,
-    registeredUsers: 0
+    inProgressReports: 0
   });
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [updating, setUpdating] = useState(false);
+  const [activeFilter, setActiveFilter] = useState(null);
   const itemsPerPage = 5;
-  const totalPages = Math.max(1, Math.ceil(recentSubmissions.length / itemsPerPage));
+  
+  // Filter reports based on active filter
+  const filteredSubmissions = activeFilter 
+    ? recentSubmissions.filter(submission => {
+        const status = submission.status.toLowerCase();
+        switch (activeFilter) {
+          case 'pending':
+            return status === 'pending' || status === 'under review';
+          case 'received':
+            return status === 'received';
+          case 'in-progress':
+            return status === 'in progress';
+          case 'resolved':
+            return status === 'resolved';
+          default:
+            return true;
+        }
+      })
+    : recentSubmissions;
+  
+  const totalPages = Math.max(1, Math.ceil(filteredSubmissions.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentSubmissions = recentSubmissions.slice(startIndex, endIndex);
+  const currentSubmissions = filteredSubmissions.slice(startIndex, endIndex);
 
   const getStatusColor = (status) => {
     const normalizedStatus = status.toLowerCase();
@@ -74,14 +95,7 @@ function Dashboard({ onNavigateToReport }) {
         const reportsSnapshot = await get(reportsRef);
         console.log('Reports snapshot result:', reportsSnapshot.exists());
         
-        // Fetch registered users
-        const usersRef = ref(db, 'civilian/civilian account');
-        console.log('Attempting to fetch users from:', usersRef.toString());
-        const usersSnapshot = await get(usersRef);
-        console.log('Users snapshot result:', usersSnapshot.exists());
-        
         let reportsArray = [];
-        let userCount = 0;
         
         if (reportsSnapshot.exists()) {
           const reportsData = reportsSnapshot.val();
@@ -99,16 +113,18 @@ function Dashboard({ onNavigateToReport }) {
           reportsArray.sort((a, b) => new Date(b.date) - new Date(a.date));
         }
         
-        if (usersSnapshot.exists()) {
-          const usersData = usersSnapshot.val();
-          userCount = Object.keys(usersData).length;
-        }
         
         // Calculate statistics
+        const receivedCount = reportsArray.filter(report => 
+          report.status.toLowerCase() === 'received'
+        ).length;
+        
         const pendingCount = reportsArray.filter(report => 
           report.status.toLowerCase() === 'pending' || 
-          report.status.toLowerCase() === 'under review' ||
-          report.status.toLowerCase() === 'received' ||
+          report.status.toLowerCase() === 'under review'
+        ).length;
+        
+        const inProgressCount = reportsArray.filter(report => 
           report.status.toLowerCase() === 'in progress'
         ).length;
         
@@ -117,10 +133,10 @@ function Dashboard({ onNavigateToReport }) {
         ).length;
         
         setStats({
-          activeIncidents: reportsArray.length,
+          receivedReports: receivedCount,
           pendingReports: pendingCount,
           resolvedReports: resolvedCount,
-          registeredUsers: userCount
+          inProgressReports: inProgressCount
         });
         
         setRecentSubmissions(reportsArray);
@@ -135,6 +151,11 @@ function Dashboard({ onNavigateToReport }) {
 
     fetchData();
   }, []);
+
+  const handleFilterClick = (filterType) => {
+    setActiveFilter(activeFilter === filterType ? null : filterType);
+    setCurrentPage(1); // Reset to first page when filter changes
+  };
 
   const handleUpdateStatus = (report) => {
     setSelectedReport(report);
@@ -162,12 +183,7 @@ function Dashboard({ onNavigateToReport }) {
           const reportsRef = ref(db, 'civilian/civilian crime reports');
           const reportsSnapshot = await get(reportsRef);
           
-          // Fetch registered users
-          const usersRef = ref(db, 'civilian/civilian account');
-          const usersSnapshot = await get(usersRef);
-          
           let reportsArray = [];
-          let userCount = 0;
           
           if (reportsSnapshot.exists()) {
             const reportsData = reportsSnapshot.val();
@@ -185,16 +201,18 @@ function Dashboard({ onNavigateToReport }) {
             reportsArray.sort((a, b) => new Date(b.date) - new Date(a.date));
           }
           
-          if (usersSnapshot.exists()) {
-            const usersData = usersSnapshot.val();
-            userCount = Object.keys(usersData).length;
-          }
           
           // Calculate statistics
+          const receivedCount = reportsArray.filter(report => 
+            report.status.toLowerCase() === 'received'
+          ).length;
+          
           const pendingCount = reportsArray.filter(report => 
             report.status.toLowerCase() === 'pending' || 
-            report.status.toLowerCase() === 'under review' ||
-            report.status.toLowerCase() === 'received' ||
+            report.status.toLowerCase() === 'under review'
+          ).length;
+          
+          const inProgressCount = reportsArray.filter(report => 
             report.status.toLowerCase() === 'in progress'
           ).length;
           
@@ -203,10 +221,10 @@ function Dashboard({ onNavigateToReport }) {
           ).length;
           
           setStats({
-            activeIncidents: reportsArray.length,
+            receivedReports: receivedCount,
             pendingReports: pendingCount,
             resolvedReports: resolvedCount,
-            registeredUsers: userCount
+            inProgressReports: inProgressCount
           });
           
           setRecentSubmissions(reportsArray);
@@ -229,31 +247,45 @@ function Dashboard({ onNavigateToReport }) {
 
   return (
     <div className="page-content">
-      <h1>Police Dashboard</h1>
+      <h1>E-Responde Dashboard</h1>
       <section className="dashboard-section">
         <h2>Report Overview</h2>
         <div className="dashboard-grid">
-          <div className="card">
-            <h3>Active Incidents</h3>
-            <p className="stat">{stats.activeIncidents}</p>
-          </div>
-          <div className="card">
+          <div 
+            className={`card filter-card ${activeFilter === 'pending' ? 'active' : ''}`}
+            onClick={() => handleFilterClick('pending')}
+          >
             <h3>Pending Reports</h3>
             <p className="stat">{stats.pendingReports}</p>
           </div>
-          <div className="card">
+          <div 
+            className={`card filter-card ${activeFilter === 'received' ? 'active' : ''}`}
+            onClick={() => handleFilterClick('received')}
+          >
+            <h3>Received Reports</h3>
+            <p className="stat">{stats.receivedReports}</p>
+          </div>
+          <div 
+            className={`card filter-card ${activeFilter === 'in-progress' ? 'active' : ''}`}
+            onClick={() => handleFilterClick('in-progress')}
+          >
+            <h3>In Progress Reports</h3>
+            <p className="stat">{stats.inProgressReports}</p>
+          </div>
+          <div 
+            className={`card filter-card ${activeFilter === 'resolved' ? 'active' : ''}`}
+            onClick={() => handleFilterClick('resolved')}
+          >
             <h3>Resolved Reports</h3>
             <p className="stat">{stats.resolvedReports}</p>
-          </div>
-          <div className="card">
-            <h3>Registered Users</h3>
-            <p className="stat">{stats.registeredUsers}</p>
           </div>
         </div>
       </section>
 
       <section className="dashboard-section">
-        <h2>Recent Submissions</h2>
+        <div className="section-header">
+          <h2>Crime Reports</h2>
+        </div>
         {loading && <p>Loading crime reports...</p>}
         {error && <p style={{color: 'red'}}>Error: {error}</p>}
         <div className="table-container">
