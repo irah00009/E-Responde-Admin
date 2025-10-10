@@ -7,6 +7,7 @@ import Heatmap from './components/Heatmap.jsx'
 import Dispatch from './components/Dispatch.jsx'
 import Login from './components/Login.jsx'
 import UserAccountManagement from './components/UserAccountManagement.jsx'
+import PoliceAccountManagement from './components/PoliceAccountManagement.jsx'
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard')
@@ -41,7 +42,7 @@ function App() {
       case 'dispatch':
         return <Dispatch />
       case 'police-account-management':
-        return <div className="page-content"><h1>Police Account Management</h1><p>Police account management functionality coming soon...</p></div>
+        return <PoliceAccountManagement />
       case 'user-account-management':
         return <UserAccountManagement />
       default:

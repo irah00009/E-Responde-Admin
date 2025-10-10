@@ -129,8 +129,8 @@ function UserAccountManagement() {
   return (
     <div className="user-management-container">
       <div className="user-management-header">
-        <h1>User Account Management</h1>
-        <p>Manage and monitor registered users</p>
+        <h1>Civilian Management</h1>
+        <p>Manage and monitor registered civilian users</p>
       </div>
 
       <div className="user-stats">

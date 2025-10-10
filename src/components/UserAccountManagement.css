@@ -328,6 +328,7 @@
   background: rgba(239, 68, 68, 0.1);
 }
 
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .user-management-container {
