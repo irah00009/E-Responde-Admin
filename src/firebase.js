@@ -8,6 +8,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getDatabase } from 'firebase/database'
+import { getFunctions } from 'firebase/functions'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -26,5 +27,6 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 const auth = getAuth(app)
 const db = getFirestore(app)
 const realtimeDb = getDatabase(app)
+const functions = getFunctions(app)
 
-export { app, auth, db, realtimeDb }
+export { app, auth, db, realtimeDb, functions }
