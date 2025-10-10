@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { realtimeDb } from '../firebase'
+import { ref, get, update } from 'firebase/database'
 import './UserAccountManagement.css'
 
 function UserAccountManagement() {
@@ -17,110 +19,37 @@ function UserAccountManagement() {
       setLoading(true)
       setError('')
       
-      // For now, let's create a mock implementation that simulates Firebase Auth data
-      // This will show the structure and functionality while we work on the Firebase Functions
+      // Fetch users from Firebase Realtime Database - civilian/civilian account
+      const civilianRef = ref(realtimeDb, 'civilian/civilian account')
+      const snapshot = await get(civilianRef)
       
-      // Mock data that represents what we would get from Firebase Auth
-      const mockUsers = [
-        {
-          id: 'DxyBfShaoJMezPLZK36vPknl',
-          firstName: 'Mike',
-          email: 'mikeddoctor08@gmail.com',
-          createdAt: '2025-10-10T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-10-10T00:00:00.000Z'
-        },
-        {
-          id: '0tggu2X0XVXraEs050rrOkjoG',
-          firstName: 'Junno',
-          email: 'junniejunno@gmail.com',
-          createdAt: '2025-10-10T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-10-10T00:00:00.000Z'
-        },
-        {
-          id: 'U68qOY1mfibiiJZ10Yogedyl5x',
-          firstName: 'Lilia',
-          email: 'lilializardo6@gmail.com',
-          createdAt: '2025-10-04T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-10-06T00:00:00.000Z'
-        },
-        {
-          id: 'yh0mRUAgOiUiowN8810hk38q',
-          firstName: 'Irah',
-          email: 'rhlizardo@gmail.com',
-          createdAt: '2025-10-04T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-10-10T00:00:00.000Z'
-        },
-        {
-          id: 'jrU2nukRP3gtvqy4F7EICAdhA',
-          firstName: 'Kirsten',
-          email: 'kirsten.lzrd04@gmail.com',
-          createdAt: '2025-09-12T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-09-12T00:00:00.000Z'
-        },
-        {
-          id: '61dc4WDqxnad6pB352WmN0',
-          firstName: 'Merlin',
-          email: 'jjoveryt@gmail.com',
-          createdAt: '2025-09-05T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-09-05T00:00:00.000Z'
-        },
-        {
-          id: 'LNMXYK1ISAXOH2pDH0OWX',
-          firstName: 'John',
-          email: 'johndoe@gmail.com',
-          createdAt: '2025-09-01T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-09-01T00:00:00.000Z'
-        },
-        {
-          id: 'IkIgAFNGiaSyCYLDOmhdGerlC',
-          firstName: 'MJ',
-          email: 'mjeco@tip.edu.ph',
-          createdAt: '2025-08-18T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-08-18T00:00:00.000Z'
-        },
-        {
-          id: 'FcA5gv2qrZNyUpsXl2uxrtkulT',
-          firstName: 'Junno',
-          email: 'junno.elizer@gmail.com',
-          createdAt: '2025-08-18T00:00:00.000Z',
-          isSuspended: false,
-          suspendedAt: null,
-          suspendedBy: null,
-          lastSignIn: '2025-10-10T00:00:00.000Z'
-        }
-      ]
-      
-      setUsers(mockUsers)
-      setTotalUsers(mockUsers.length)
-      
-      // TODO: Replace with actual Firebase Functions call once deployed
-      // const getUsersFunction = httpsCallable(functions, 'getUsers')
-      // const result = await getUsersFunction()
-      // const userList = result.data.users
+      if (snapshot.exists()) {
+        const civilianData = snapshot.val()
+        const userList = []
+        
+        // Convert the data to an array of users
+        Object.keys(civilianData).forEach(userId => {
+          const userData = civilianData[userId]
+          if (userData.email && userData.firstName) {
+            userList.push({
+              id: userId,
+              firstName: userData.firstName,
+              email: userData.email,
+              createdAt: userData.createdAt || userData.registeredAt || 'Unknown',
+              isSuspended: userData.isSuspended || false,
+              suspendedAt: userData.suspendedAt || null,
+              suspendedBy: userData.suspendedBy || null,
+              lastSignIn: userData.lastSignIn || userData.createdAt || 'Unknown'
+            })
+          }
+        })
+        
+        setUsers(userList)
+        setTotalUsers(userList.length)
+      } else {
+        setUsers([])
+        setTotalUsers(0)
+      }
       
     } catch (err) {
       console.error('Error fetching users:', err)
@@ -151,13 +80,16 @@ function UserAccountManagement() {
       setActionLoading(userId)
       setError('')
 
-      // For now, just update local state to demonstrate functionality
-      // TODO: Replace with actual Firebase Functions call once deployed
-      // const updateUserStatusFunction = httpsCallable(functions, 'updateUserStatus')
-      // await updateUserStatusFunction({
-      //   userId: userId,
-      //   disabled: !currentStatus
-      // })
+      // Update user status in Firebase Realtime Database
+      const userRef = ref(realtimeDb, `civilian/civilian account/${userId}`)
+      
+      const updates = {
+        isSuspended: !currentStatus,
+        suspendedAt: !currentStatus ? new Date().toISOString() : null,
+        suspendedBy: !currentStatus ? 'admin@e-responde.com' : null
+      }
+
+      await update(userRef, updates)
       
       // Update local state
       setUsers(prev => prev.map(user => 
@@ -165,8 +97,8 @@ function UserAccountManagement() {
           ? { 
               ...user, 
               isSuspended: !currentStatus,
-              suspendedAt: !currentStatus ? new Date().toISOString() : null,
-              suspendedBy: !currentStatus ? 'admin@e-responde.com' : null
+              suspendedAt: updates.suspendedAt,
+              suspendedBy: updates.suspendedBy
             }
           : user
       ))
