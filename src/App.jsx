@@ -6,6 +6,7 @@ import ViewReport from './components/ViewReport.jsx'
 import Heatmap from './components/Heatmap.jsx'
 import Dispatch from './components/Dispatch.jsx'
 import Login from './components/Login.jsx'
+import UserAccountManagement from './components/UserAccountManagement.jsx'
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard')
@@ -42,7 +43,7 @@ function App() {
       case 'police-account-management':
         return <div className="page-content"><h1>Police Account Management</h1><p>Police account management functionality coming soon...</p></div>
       case 'user-account-management':
-        return <div className="page-content"><h1>User Account Management</h1><p>User account management functionality coming soon...</p></div>
+        return <UserAccountManagement />
       default:
         return <Dashboard onNavigateToReport={handleNavigateToReport} />
     }
