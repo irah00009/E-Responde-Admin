@@ -61,29 +61,29 @@ function Dashboard({ onNavigateToReport }) {
 
   // Filter reports by severity levels
   const immediateSeverityReports = recentSubmissions.filter(submission => 
-    submission.severity?.toLowerCase() === 'immediate' || 
-    submission.type.toLowerCase() === 'emergency sos' // Emergency SOS is always immediate severity
+    (typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'immediate') || 
+    (typeof submission.type === 'string' && submission.type.toLowerCase() === 'emergency sos') // Emergency SOS is always immediate severity
   );
 
   const highSeverityReports = recentSubmissions.filter(submission => 
-    submission.severity?.toLowerCase() === 'high'
+    typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'high'
   );
 
   const moderateSeverityReports = recentSubmissions.filter(submission => 
-    submission.severity?.toLowerCase() === 'moderate'
+    typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'moderate'
   );
 
   const lowSeverityReports = recentSubmissions.filter(submission => 
-    submission.severity?.toLowerCase() === 'low'
+    typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'low'
   );
 
   // Filter severity reports based on active filter
   const filteredImmediateSeverity = activeFilter 
     ? immediateSeverityReports.filter(submission => {
-        const status = submission.status.toLowerCase();
+        const status = typeof submission.status === 'string' ? submission.status.toLowerCase() : '';
         switch (activeFilter) {
           case 'pending':
-            return status === 'pending' || status === 'under review';
+            return status === 'pending' || status === 'under review' || status === 'assigned';
           case 'received':
             return status === 'received';
           case 'in-progress':
@@ -98,10 +98,10 @@ function Dashboard({ onNavigateToReport }) {
 
   const filteredHighSeverity = activeFilter 
     ? highSeverityReports.filter(submission => {
-        const status = submission.status.toLowerCase();
+        const status = typeof submission.status === 'string' ? submission.status.toLowerCase() : '';
         switch (activeFilter) {
           case 'pending':
-            return status === 'pending' || status === 'under review';
+            return status === 'pending' || status === 'under review' || status === 'assigned';
           case 'received':
             return status === 'received';
           case 'in-progress':
@@ -116,10 +116,10 @@ function Dashboard({ onNavigateToReport }) {
 
   const filteredModerateSeverity = activeFilter 
     ? moderateSeverityReports.filter(submission => {
-        const status = submission.status.toLowerCase();
+        const status = typeof submission.status === 'string' ? submission.status.toLowerCase() : '';
         switch (activeFilter) {
           case 'pending':
-            return status === 'pending' || status === 'under review';
+            return status === 'pending' || status === 'under review' || status === 'assigned';
           case 'received':
             return status === 'received';
           case 'in-progress':
@@ -134,10 +134,10 @@ function Dashboard({ onNavigateToReport }) {
 
   const filteredLowSeverity = activeFilter 
     ? lowSeverityReports.filter(submission => {
-        const status = submission.status.toLowerCase();
+        const status = typeof submission.status === 'string' ? submission.status.toLowerCase() : '';
         switch (activeFilter) {
           case 'pending':
-            return status === 'pending' || status === 'under review';
+            return status === 'pending' || status === 'under review' || status === 'assigned';
           case 'received':
             return status === 'received';
           case 'in-progress':
@@ -197,7 +197,7 @@ function Dashboard({ onNavigateToReport }) {
   };
 
   const formatStatus = (status) => {
-    const normalizedStatus = status.toLowerCase();
+    const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : '';
     switch (normalizedStatus) {
       case "in progress":
         return "In Progress";
@@ -214,7 +214,7 @@ function Dashboard({ onNavigateToReport }) {
   };
 
   const isResolved = (status) => {
-    const s = (status || '').toLowerCase();
+    const s = typeof status === 'string' ? status.toLowerCase() : '';
     return s === 'resolved' || s === 'case resolved';
   };
 
@@ -293,7 +293,8 @@ function Dashboard({ onNavigateToReport }) {
         
         const pendingCount = reportsArray.filter(report => 
           report.status.toLowerCase() === 'pending' || 
-          report.status.toLowerCase() === 'under review'
+          report.status.toLowerCase() === 'under review' ||
+          report.status.toLowerCase() === 'assigned'
         ).length;
         
         const inProgressCount = reportsArray.filter(report => 
@@ -333,14 +334,27 @@ function Dashboard({ onNavigateToReport }) {
               try {
                 let reporterName = 'Anonymous Reporter';
                 
+                console.log('Fetching reporter info for notification:', {
+                  reporterUid: latestReport.reporterUid,
+                  reportId: latestReport.id
+                });
+                
                 if (latestReport.reporterUid) {
                   const reporterRef = ref(db, `civilian/civilian account/${latestReport.reporterUid}`);
                   const reporterSnapshot = await get(reporterRef);
                   
                   if (reporterSnapshot.exists()) {
                     const reporterData = reporterSnapshot.val();
-                    reporterName = `${reporterData.firstName || ''} ${reporterData.lastName || ''}`.trim() || 'Anonymous Reporter';
+                    console.log('Reporter data found for notification:', reporterData);
+                    const firstName = reporterData.firstName || '';
+                    const lastName = reporterData.lastName || '';
+                    reporterName = `${firstName} ${lastName}`.trim() || 'Anonymous Reporter';
+                    console.log('Reporter name set to:', reporterName);
+                  } else {
+                    console.log('No reporter account found for UID:', latestReport.reporterUid);
                   }
+                } else {
+                  console.log('No reporter UID available for report:', latestReport.id);
                 }
                 
                 // Show notification for new report with reporter info
@@ -660,21 +674,32 @@ function Dashboard({ onNavigateToReport }) {
       }
       
       if (report.reporterUid) {
+        console.log('Fetching civilian info for call:', report.reporterUid);
         // Get civilian reporter info from their account
         const civilianRef = ref(db, `civilian/civilian account/${report.reporterUid}`);
         const civilianSnapshot = await get(civilianRef);
         
         if (civilianSnapshot.exists()) {
           const civilianData = civilianSnapshot.val();
+          console.log('Civilian data found for call:', civilianData);
+          const firstName = civilianData.firstName || '';
+          const lastName = civilianData.lastName || '';
+          const fullName = `${firstName} ${lastName}`.trim();
+          
           targetUser = {
             id: report.reporterUid,
-            name: `${civilianData.firstName || ''} ${civilianData.lastName || ''}`.trim() || 'Anonymous Reporter',
+            name: fullName || 'Anonymous Reporter',
             email: civilianData.email || 'Not available',
             type: 'civilian',
             isOnline: civilianData.isOnline || false,
             lastSeen: civilianData.lastSeen || null
           };
+          console.log('Target user set for call:', targetUser);
+        } else {
+          console.log('No civilian account found for UID:', report.reporterUid);
         }
+      } else {
+        console.log('No reporter UID available for call');
       }
       
       // If no reporter UID or civilian account found, show error
