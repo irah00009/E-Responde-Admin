@@ -648,7 +648,7 @@ function SOSManagement() {
                       className="status-text"
                       style={{ color: getStatusColor(alert.status) }}
                     >
-                      {alert.status.toUpperCase()}
+                      {(alert.status || 'Unknown').toUpperCase()}
                     </span>
                   </div>
                   <div className="alert-actions">
@@ -783,7 +783,7 @@ function SOSManagement() {
                         className="status-badge"
                         style={{ backgroundColor: getStatusColor(alert.status) }}
                       >
-                        {getStatusIcon(alert.status)} {alert.status.toUpperCase()}
+                        {getStatusIcon(alert.status)} {(alert.status || 'Unknown').toUpperCase()}
                       </span>
                     </td>
                     <td className="alert-priority">
@@ -846,7 +846,7 @@ function SOSManagement() {
                     className="status-badge"
                     style={{ backgroundColor: getStatusColor(selectedAlert.status) }}
                   >
-                    {getStatusIcon(selectedAlert.status)} {selectedAlert.status.toUpperCase()}
+                    {getStatusIcon(selectedAlert.status)} {(selectedAlert.status || 'Unknown').toUpperCase()}
                   </span>
                 </div>
                 <div className="detail-item">

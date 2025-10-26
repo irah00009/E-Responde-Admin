@@ -8,7 +8,7 @@ import { app, storage } from '../firebase'
 import StatusTag from './StatusTag'
 import './ViewReport.css'
 
-function ViewReport({ reportId, onBackToDashboard }) {
+function ViewReport({ reportId, alertType, onBackToDashboard }) {
   const [reportData, setReportData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -345,7 +345,13 @@ function ViewReport({ reportId, onBackToDashboard }) {
       try {
         setLoading(true)
         const db = getDatabase(app)
-        const reportRef = ref(db, `civilian/civilian crime reports/${reportId}`)
+        
+        // Determine the correct path based on alert type
+        const reportPath = alertType === 'sos' 
+          ? `sos_alerts/${reportId}` 
+          : `civilian/civilian crime reports/${reportId}`
+        
+        const reportRef = ref(db, reportPath)
         const snapshot = await get(reportRef)
         
         if (snapshot.exists()) {
@@ -435,21 +441,52 @@ function ViewReport({ reportId, onBackToDashboard }) {
             });
           }
           
-          setReportData({
-            reportId: data.reportId || reportId,
-            type: data.crimeType || 'Unknown',
-            dateReported: data.dateTime || data.createdAt,
-            location: data.location?.address || 'No location provided',
-            coordinates: {
-              latitude: data.location?.latitude || null,
-              longitude: data.location?.longitude || null
-            },
-            reportedBy: reporterInfo,
-            description: data.description || 'No description provided',
-            status: data.status || 'Unknown',
-            multimedia: data.multimedia || [],
-            videos: data.videos || []
-          })
+          // Process data based on alert type
+          if (alertType === 'sos') {
+            // Process SoS alert data
+            const sosData = {
+              reportId: data.reportId || reportId,
+              type: data.alertType || 'Smart Watch SoS',
+              dateReported: data.timestamp || data.createdAt,
+              location: data.location?.address || 'No location provided',
+              coordinates: {
+                latitude: data.location?.latitude || null,
+                longitude: data.location?.longitude || null
+              },
+              reportedBy: reporterInfo,
+              description: data.message || 'No message provided',
+              status: data.status || 'Unknown',
+              multimedia: data.multimedia || [],
+              videos: data.videos || [],
+              // SoS-specific fields
+              userId: data.userId || 'Unknown',
+              deviceType: data.deviceType || 'Smart Watch',
+              reporterInfo: reporterInfo,
+              alertType: data.alertType || 'SoS Alert',
+              fullLocation: data.location || {},
+              voipCalls: data.voipCalls || [],
+              voipSignaling: data.voipSignaling || {},
+              formattedDate: data.timestamp ? new Date(data.timestamp).toLocaleString() : 'Unknown'
+            }
+            setReportData(sosData)
+          } else {
+            // Process crime report data
+            setReportData({
+              reportId: data.reportId || reportId,
+              type: data.crimeType || 'Unknown',
+              dateReported: data.dateTime || data.createdAt,
+              location: data.location?.address || 'No location provided',
+              coordinates: {
+                latitude: data.location?.latitude || null,
+                longitude: data.location?.longitude || null
+              },
+              reportedBy: reporterInfo,
+              description: data.description || 'No description provided',
+              status: data.status || 'Unknown',
+              multimedia: data.multimedia || [],
+              videos: data.videos || []
+            })
+          }
 
           // Fetch nearest police officers if coordinates are available
           if (data.location?.latitude && data.location?.longitude) {
@@ -813,8 +850,8 @@ function ViewReport({ reportId, onBackToDashboard }) {
   return (
     <>
     <div className="page-content">
-      <div className="report-header">
-        <h1></h1>
+      <div className={`report-header ${alertType === 'sos' ? 'sos-alert-header' : ''}`}>
+        <h1>{reportData.type}</h1>
         <button 
           className="close-button"
           onClick={onBackToDashboard}
@@ -830,7 +867,7 @@ function ViewReport({ reportId, onBackToDashboard }) {
       <div className="report-layout">
         <div className="report-main">
           <div className="report-section">
-            <h2>Report Details</h2>
+            <h2>{alertType === 'sos' ? 'SoS Alert Details' : 'Report Details'}</h2>
             <div className="report-grid">
               <div className="detail-item">
                 <label>Type:</label>
@@ -838,7 +875,7 @@ function ViewReport({ reportId, onBackToDashboard }) {
               </div>
               <div className="detail-item">
                 <label>Date Reported:</label>
-                <span>{formatDate(reportData.dateReported)}</span>
+                <span>{alertType === 'sos' ? reportData.formattedDate : formatDate(reportData.dateReported)}</span>
               </div>
               <div className="detail-item">
                 <label>Location:</label>
@@ -848,23 +885,39 @@ function ViewReport({ reportId, onBackToDashboard }) {
                 <label>Status:</label>
                 <StatusTag status={reportData.status} />
               </div>
+              {alertType === 'sos' && (
+                <>
+                  <div className="detail-item">
+                    <label>Alert Type:</label>
+                    <span className="alert-type-badge">{reportData.alertType}</span>
+                  </div>
+                  <div className="detail-item">
+                    <label>Device Type:</label>
+                    <span>{reportData.deviceType}</span>
+                  </div>
+                  <div className="detail-item">
+                    <label>User ID:</label>
+                    <span className="user-id">{reportData.userId}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           <div className="report-section">
-            <h2>Reported By</h2>
+            <h2>{alertType === 'sos' ? 'User Information' : 'Reported By'}</h2>
             <div className="reporter-info">
               <div className="detail-item">
                 <label>Name:</label>
-                <span>{reportData.reportedBy.name}</span>
+                <span>{alertType === 'sos' ? reportData.reporterInfo.name : reportData.reportedBy.name}</span>
               </div>
               <div className="detail-item">
                 <label>Phone:</label>
-                <span>{reportData.reportedBy.phone}</span>
+                <span>{alertType === 'sos' ? reportData.reporterInfo.phone : reportData.reportedBy.phone}</span>
               </div>
               <div className="detail-item">
                 <label>Email:</label>
-                <span>{reportData.reportedBy.email}</span>
+                <span>{alertType === 'sos' ? reportData.reporterInfo.email : reportData.reportedBy.email}</span>
               </div>
             </div>
           </div>
@@ -875,6 +928,36 @@ function ViewReport({ reportId, onBackToDashboard }) {
               <p>{reportData.description}</p>
             </div>
           </div>
+
+          {alertType === 'sos' && reportData.fullLocation && (
+            <div className="report-section">
+              <h2>Detailed Location Information</h2>
+              <div className="location-details">
+                <div className="detail-item">
+                  <label>Address:</label>
+                  <span>{reportData.fullLocation.address || 'Not provided'}</span>
+                </div>
+                <div className="detail-item">
+                  <label>City:</label>
+                  <span>{reportData.fullLocation.city || 'Not provided'}</span>
+                </div>
+                <div className="detail-item">
+                  <label>Country:</label>
+                  <span>{reportData.fullLocation.country || 'Not provided'}</span>
+                </div>
+                <div className="detail-item">
+                  <label>Postal Code:</label>
+                  <span>{reportData.fullLocation.postalCode || 'Not provided'}</span>
+                </div>
+                <div className="detail-item">
+                  <label>Coordinates:</label>
+                  <span>{reportData.coordinates.latitude && reportData.coordinates.longitude 
+                    ? `${reportData.coordinates.latitude}, ${reportData.coordinates.longitude}`
+                    : 'Not available'}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="report-section">
             <h2>Location Map</h2>

@@ -402,14 +402,17 @@ function EnhancedDispatch() {
         throw new Error(`Failed to update crime report: ${error.message}`)
       }
 
-      // Keep officer status as "Available" - will be changed to "Dispatched" after mobile app confirmation
+      // Update officer status to Dispatched immediately when assigned
       try {
-        console.log('Officer status remains Available until mobile app confirmation...', selectedOfficer)
-        // Don't update officer status here - let mobile app handle the confirmation
-        console.log('Officer status will be updated to Dispatched after mobile app confirmation')
+        console.log('Updating officer status to Dispatched...', selectedOfficer)
+        const officerRef = ref(realtimeDb, `police/police account/${selectedOfficer}`)
+        await update(officerRef, {
+          status: 'Dispatched'
+        })
+        console.log('Officer status updated to Dispatched successfully')
       } catch (error) {
-        console.error('Error in officer status handling:', error)
-        throw new Error(`Failed to handle officer status: ${error.message}`)
+        console.error('Error updating officer status:', error)
+        throw new Error(`Failed to update officer status: ${error.message}`)
       }
 
       // Update the officer's current assignment
@@ -525,26 +528,6 @@ function EnhancedDispatch() {
       return "status-dispatched";
     } else {
       return "status-pending";
-    }
-  }
-
-  // Manual cleanup function for testing
-  const handleCleanupData = async () => {
-    const confirmCleanup = window.confirm(
-      'This will delete all reports and SOS alerts outside Oct 20-22 date range and those without location data. Continue?'
-    )
-    
-    if (!confirmCleanup) return
-    
-    try {
-      setLoading(true)
-      await fetchData() // This will trigger the cleanup
-      alert('Data cleanup completed successfully!')
-    } catch (error) {
-      console.error('Error during cleanup:', error)
-      alert('Error during cleanup. Please try again.')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -737,22 +720,39 @@ function EnhancedDispatch() {
     const reportStatus = report.status?.toLowerCase() || ''
     const filterValue = filterStatus.toLowerCase()
     
-    // Handle different status variations
-    if (filterValue === 'assigned') {
-      return reportStatus === 'assigned'
-    } else if (filterValue === 'pending') {
-      return reportStatus === 'pending' || reportStatus === 'under review'
-    } else if (filterValue === 'dispatched') {
-      return reportStatus === 'dispatched'
-    } else if (filterValue === 'received') {
-      return reportStatus === 'received'
-    } else if (filterValue === 'in progress') {
-      return reportStatus === 'in progress'
-    } else if (filterValue === 'resolved') {
-      return reportStatus === 'resolved' || reportStatus === 'case resolved'
+    // Handle different status variations with comprehensive matching
+    switch (filterValue) {
+      case 'pending':
+        return reportStatus === 'pending' || 
+               reportStatus === 'under review' || 
+               reportStatus === 'new' ||
+               reportStatus === 'unassigned'
+      
+      case 'received':
+        return reportStatus === 'received' || 
+               reportStatus === 'acknowledged'
+      
+      case 'in progress':
+        return reportStatus === 'in progress' || 
+               reportStatus === 'in-progress' ||
+               reportStatus === 'processing' ||
+               reportStatus === 'investigating'
+      
+      case 'dispatched':
+        return reportStatus === 'dispatched' || 
+               reportStatus === 'assigned' ||
+               reportStatus === 'en route'
+      
+      case 'resolved':
+        return reportStatus === 'resolved' || 
+               reportStatus === 'case resolved' ||
+               reportStatus === 'completed' ||
+               reportStatus === 'closed'
+      
+      default:
+        // Fallback to exact match
+        return reportStatus === filterValue
     }
-    
-    return reportStatus === filterValue
   })
 
   // Debug logging for reports
@@ -834,16 +834,6 @@ function EnhancedDispatch() {
         </div>
       </section>
 
-      {error && (
-        <div className="error-message">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
-          {error}
-        </div>
-      )}
 
       {/* Filters */}
       <div className="filters-section">
@@ -856,7 +846,6 @@ function EnhancedDispatch() {
           >
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
-            <option value="assigned">Assigned</option>
             <option value="received">Received</option>
             <option value="in progress">In Progress</option>
             <option value="dispatched">Dispatched</option>
@@ -872,16 +861,6 @@ function EnhancedDispatch() {
              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
            </svg>
            Refresh
-         </button>
-         
-         <button onClick={handleCleanupData} className="cleanup-btn">
-           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-             <polyline points="3,6 5,6 21,6"></polyline>
-             <path d="M19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
-             <line x1="10" y1="11" x2="10" y2="17"></line>
-             <line x1="14" y1="11" x2="14" y2="17"></line>
-           </svg>
-           Cleanup Data
          </button>
       </div>
 
@@ -935,7 +914,7 @@ function EnhancedDispatch() {
                     </p>
                   </div>
                   
-                  {report.dispatchInfo && (
+                  {report.dispatchInfo ? (
                     <div className="dispatch-info">
                       <strong>Dispatched to:</strong> {report.dispatchInfo.unitName}
                       <br />
@@ -943,19 +922,22 @@ function EnhancedDispatch() {
                       <br />
                       <strong>Priority:</strong> {report.dispatchInfo.priority}
                     </div>
-                  )}
+                  ) : report.status?.toLowerCase() === 'dispatched' ? (
+                    <div className="dispatch-info">
+                      <strong>Status:</strong> Dispatched (Officer information not available)
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="report-actions">
-                  <button 
-                    className="dispatch-btn"
-                    onClick={() => handleDispatchClick(report)}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-                    </svg>
-                    Dispatch Unit
-                  </button>
+                  {report.status !== 'Case Resolved' && (
+                    <button 
+                      className="dispatch-btn"
+                      onClick={() => handleDispatchClick(report)}
+                    >
+                      Dispatch Unit
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

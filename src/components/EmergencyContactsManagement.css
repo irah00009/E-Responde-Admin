@@ -256,6 +256,7 @@
   font-weight: 500;
   color: white;
   text-transform: capitalize;
+  white-space: nowrap;
 }
 
 .status-badge {

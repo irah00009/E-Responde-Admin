@@ -6,7 +6,7 @@ import { useAuth } from '../providers/AuthProvider'
 import StatusTag from './StatusTag'
 import './Dashboard.css'
 
-function Dashboard({ onNavigateToReport }) {
+function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user, claims, loading: authLoading } = useAuth()
@@ -14,20 +14,44 @@ function Dashboard({ onNavigateToReport }) {
   const [currentPageHigh, setCurrentPageHigh] = useState(1);
   const [currentPageModerate, setCurrentPageModerate] = useState(1);
   const [currentPageLow, setCurrentPageLow] = useState(1);
+  const [currentPageSmartWatch, setCurrentPageSmartWatch] = useState(1);
   const [recentSubmissions, setRecentSubmissions] = useState([]);
+  const [smartWatchSOSAlerts, setSmartWatchSOSAlerts] = useState([]);
+  const [smartWatchLoading, setSmartWatchLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [highlightedReportId, setHighlightedReportId] = useState(null);
+  const [activeFilter, setActiveFilter] = useState(null);
+  
+  // Filter Smart Watch SoS alerts based on active filter
+  const filteredSmartWatchSOS = activeFilter 
+    ? smartWatchSOSAlerts.filter(alert => {
+        const status = typeof alert.status === 'string' ? alert.status.toLowerCase() : '';
+        switch (activeFilter) {
+          case 'pending':
+            return status === 'pending' || status === 'under review' || status === 'assigned' || status === 'active';
+          case 'received':
+            return status === 'received';
+          case 'in-progress':
+            return status === 'in progress';
+          case 'resolved':
+            return status === 'resolved' || status === 'case resolved';
+          default:
+            return true;
+        }
+      })
+    : smartWatchSOSAlerts;
+
   const [stats, setStats] = useState({
     receivedReports: 0,
     pendingReports: 0,
     resolvedReports: 0,
-    inProgressReports: 0
+    inProgressReports: 0,
+    smartWatchSOSReports: 0
   });
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [updating, setUpdating] = useState(false);
-  const [activeFilter, setActiveFilter] = useState(null);
   const itemsPerPage = 5;
   
   // WebRTC Call State
@@ -162,11 +186,17 @@ function Dashboard({ onNavigateToReport }) {
   const highSorted = [...filteredHighSeverity].sort((a, b) => toTimestamp(b.date) - toTimestamp(a.date));
   const moderateSorted = [...filteredModerateSeverity].sort((a, b) => toTimestamp(b.date) - toTimestamp(a.date));
   const lowSorted = [...filteredLowSeverity].sort((a, b) => toTimestamp(b.date) - toTimestamp(a.date));
+  const smartWatchSorted = [...filteredSmartWatchSOS].sort((a, b) => toTimestamp(b.date) - toTimestamp(a.date));
 
   const totalImmediatePages = Math.max(1, Math.ceil(immediateSorted.length / itemsPerPage));
   const startImmediateIndex = (currentPageImmediate - 1) * itemsPerPage;
   const endImmediateIndex = startImmediateIndex + itemsPerPage;
   const currentImmediateSubmissions = immediateSorted.slice(startImmediateIndex, endImmediateIndex);
+
+  const totalSmartWatchPages = Math.max(1, Math.ceil(smartWatchSorted.length / itemsPerPage));
+  const startSmartWatchIndex = (currentPageSmartWatch - 1) * itemsPerPage;
+  const endSmartWatchIndex = startSmartWatchIndex + itemsPerPage;
+  const currentSmartWatchSubmissions = smartWatchSorted.slice(startSmartWatchIndex, endSmartWatchIndex);
 
   const totalHighPages = Math.max(1, Math.ceil(highSorted.length / itemsPerPage));
   const startHighIndex = (currentPageHigh - 1) * itemsPerPage;
@@ -303,12 +333,13 @@ function Dashboard({ onNavigateToReport }) {
         
         const resolvedCount = reportsArray.filter(report => isResolved(report.status)).length;
         
-        setStats({
+        setStats(prevStats => ({
           receivedReports: receivedCount,
           pendingReports: pendingCount,
           resolvedReports: resolvedCount,
-          inProgressReports: inProgressCount
-        });
+          inProgressReports: inProgressCount,
+          smartWatchSOSReports: prevStats.smartWatchSOSReports // Keep existing value
+        }));
         
         // Check for new reports and trigger alarm
         
@@ -414,6 +445,91 @@ function Dashboard({ onNavigateToReport }) {
       off(reportsRef, 'value', unsubscribe);
     };
   }, []);
+
+  // Set up real-time listener for Smart Watch SoS alerts
+  useEffect(() => {
+    const db = getDatabase(app);
+    const sosAlertsRef = ref(db, 'sos_alerts');
+    
+    console.log('Setting up real-time listener for Smart Watch SoS alerts...');
+    
+    const unsubscribe = onValue(sosAlertsRef, (snapshot) => {
+      try {
+        setSmartWatchLoading(true);
+        console.log('Smart Watch SoS alerts update received:', snapshot.exists());
+        
+        let alertsArray = [];
+        
+        if (snapshot.exists()) {
+          const alertsData = snapshot.val();
+          alertsArray = Object.keys(alertsData).map(key => {
+            const alert = alertsData[key];
+            
+            // Handle location object properly
+            let locationText = 'Location not available';
+            if (alert.location) {
+              if (typeof alert.location === 'string') {
+                locationText = alert.location;
+              } else if (typeof alert.location === 'object') {
+                // Extract address from location object
+                if (alert.location.address) {
+                  locationText = alert.location.address;
+                } else if (alert.location.formatted_address) {
+                  locationText = alert.location.formatted_address;
+                } else if (alert.location.fullAddress) {
+                  locationText = alert.location.fullAddress;
+                } else if (alert.location.streetAddress) {
+                  locationText = alert.location.streetAddress;
+                } else if (alert.location.city && alert.location.country) {
+                  locationText = `${alert.location.city}, ${alert.location.country}`;
+                } else if (alert.location.city) {
+                  locationText = alert.location.city;
+                } else if (alert.location.country) {
+                  locationText = alert.location.country;
+                }
+              }
+            }
+            
+            return {
+              id: key,
+              type: 'Smart Watch SoS',
+              description: alert.message || alert.description || 'Smart Watch SoS Alert',
+              location: locationText,
+              date: alert.timestamp || alert.createdAt || new Date().toISOString(),
+              status: alert.status || 'active',
+              severity: 'immediate',
+              userId: alert.userId || alert.user_id,
+              deviceType: alert.deviceType || 'Smart Watch'
+            };
+          });
+        }
+        
+        setSmartWatchSOSAlerts(alertsArray);
+        console.log('Smart Watch SoS alerts updated:', alertsArray.length, 'alerts');
+      } catch (err) {
+        console.error('Error processing Smart Watch SoS data:', err);
+      } finally {
+        setSmartWatchLoading(false);
+      }
+    }, (error) => {
+      console.error('Smart Watch SoS listener error:', error);
+      setSmartWatchLoading(false);
+    });
+
+    // Cleanup function
+    return () => {
+      console.log('Cleaning up Smart Watch SoS listener...');
+      off(sosAlertsRef, 'value', unsubscribe);
+    };
+  }, []);
+
+  // Update stats when Smart Watch SoS data changes
+  useEffect(() => {
+    setStats(prevStats => ({
+      ...prevStats,
+      smartWatchSOSReports: smartWatchSOSAlerts.length
+    }));
+  }, [smartWatchSOSAlerts]);
 
   // Cleanup audio when component unmounts
   useEffect(() => {
@@ -1083,7 +1199,7 @@ function Dashboard({ onNavigateToReport }) {
             textTransform: 'uppercase'
           }}>Report Overview</h2>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <div 
             className={`card cursor-pointer transition-all duration-200 ${
               activeFilter === 'pending' ? 'ring-2 ring-black bg-gray-50' : ''
@@ -1159,6 +1275,29 @@ function Dashboard({ onNavigateToReport }) {
               color: '#64748b', 
               letterSpacing: '0.05em'
             }}>Resolved Reports</div>
+          </div>
+          <div 
+            className="card cursor-pointer transition-all duration-200"
+            onClick={() => {
+              // Scroll to Smart Watch SoS section
+              const sosSection = document.querySelector('.smartwatch-sos-section');
+              if (sosSection) {
+                sosSection.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+          >
+            <div className="text-3xl font-bold text-black mb-2" style={{ 
+              fontSize: '3rem', 
+              fontWeight: '800', 
+              color: '#1e293b', 
+              letterSpacing: '-0.025em'
+            }}>{stats.smartWatchSOSReports}</div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
+              fontSize: '0.95rem', 
+              fontWeight: '700', 
+              color: '#64748b', 
+              letterSpacing: '0.05em'
+            }}>Smart Watch SoS</div>
           </div>
         </div>
       </section>
@@ -1243,7 +1382,7 @@ function Dashboard({ onNavigateToReport }) {
             </div>
           </div>
           {filteredImmediateSeverity.length > itemsPerPage && (
-            <div className="flex items-center justify-center gap-4 mt-6">
+            <div className="pagination-wrapper" style={{width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem'}}>
               <button 
                 className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={currentPageImmediate === 1}
@@ -1260,6 +1399,112 @@ function Dashboard({ onNavigateToReport }) {
                 className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={currentPageImmediate === totalImmediatePages}
                 onClick={() => setCurrentPageImmediate(currentPageImmediate + 1)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="9,18 15,12 9,6"></polyline>
+                </svg>
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Immediate Smart Watch SoS Section */}
+      {filteredSmartWatchSOS.length > 0 && (
+        <section className="reports-section smartwatch-sos-section">
+          <div className="reports-section-header immediate-header">
+            <div>
+              <h2 className="reports-section-title">Immediate Smart Watch SoS</h2>
+            </div>
+          </div>
+          <div className="reports-table-container">
+            <div className="reports-table-wrapper">
+              <table className="reports-table">
+                <thead className="reports-table-header">
+                  <tr>
+                    <th className="table-header">Type</th>
+                    <th className="table-header">Description</th>
+                    <th className="table-header">Location</th>
+                    <th className="table-header">Date</th>
+                    <th className="table-header">Status</th>
+                    <th className="table-header">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="reports-table-body">
+                  {currentSmartWatchSubmissions.length === 0 && !smartWatchLoading ? (
+                    <tr>
+                      <td colSpan="6" className="table-empty-state">
+                        No Smart Watch SoS alerts found
+                      </td>
+                    </tr>
+                  ) : smartWatchLoading ? (
+                    <tr>
+                      <td colSpan="6" className="table-loading-state">
+                        <div className="loading-spinner"></div>
+                        Loading Smart Watch SoS alerts...
+                      </td>
+                    </tr>
+                  ) : (
+                    currentSmartWatchSubmissions.map((submission, index) => (
+                      <tr key={submission.id} className="table-row">
+                        <td className="table-cell table-cell-type">{submission.type}</td>
+                        <td className="table-cell table-cell-description">{truncateDescription(submission.description)}</td>
+                        <td className="table-cell table-cell-location">{submission.location}</td>
+                        <td className="table-cell table-cell-date">{formatDate(submission.date)}</td>
+                        <td className="table-cell table-cell-status">
+                          <StatusTag status={submission.status} />
+                        </td>
+                        <td className="table-cell table-cell-actions">
+                          <div className="action-buttons">
+                            <button 
+                              className="action-btn view-btn"
+                              onClick={() => onNavigateToSOSAlert(submission.id)}
+                              title="View Details"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                              View
+                            </button>
+                            <button 
+                              className="action-btn action-btn-update"
+                              onClick={() => handleUpdateStatus(submission)}
+                              title="Update Status"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                              </svg>
+                              Update
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {filteredSmartWatchSOS.length > itemsPerPage && (
+            <div className="pagination-wrapper" style={{width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem'}}>
+              <button 
+                className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={currentPageSmartWatch === 1}
+                onClick={() => setCurrentPageSmartWatch(currentPageSmartWatch - 1)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="15,18 9,12 15,6"></polyline>
+                </svg>
+              </button>
+              <span className="text-sm text-gray-600 font-medium">
+                Page {currentPageSmartWatch} of {totalSmartWatchPages}
+              </span>
+              <button 
+                className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={currentPageSmartWatch === totalSmartWatchPages}
+                onClick={() => setCurrentPageSmartWatch(currentPageSmartWatch + 1)}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="9,18 15,12 9,6"></polyline>
@@ -1350,7 +1595,7 @@ function Dashboard({ onNavigateToReport }) {
             </div>
           </div>
           {filteredHighSeverity.length > itemsPerPage && (
-            <div className="flex items-center justify-center gap-4 mt-6">
+            <div className="pagination-wrapper" style={{width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem'}}>
               <button 
                 className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={currentPageHigh === 1}
@@ -1380,7 +1625,7 @@ function Dashboard({ onNavigateToReport }) {
       {/* Moderate Severity Reports Section */}
       {filteredModerateSeverity.length > 0 && (
         <section className="reports-section moderate-severity-section">
-          <div className="reports-section-header moderate-header">
+          <div className="reports-section-header high-header">
             <div>
               <h2 className="reports-section-title">Moderate Severity Reports</h2>
             </div>
@@ -1406,17 +1651,15 @@ function Dashboard({ onNavigateToReport }) {
                     </td>
                   </tr>
                 ) : (
-                  currentModerateSubmissions.map((submission) => (
-                    <tr key={submission.id} className={`report-row ${submission.type.toLowerCase() === 'emergency sos' ? 'sos-row' : ''}`}>
-                      <td className="table-cell table-cell-type">{submission.type}</td>
-                      <td className="table-cell table-cell-description">{submission.description}</td>
-                      <td className="table-cell table-cell-location">{submission.location}</td>
-                      <td className="table-cell table-cell-date">{formatDate(submission.date)}</td>
-                      <td className="table-cell table-cell-status">
-                        <span className={`status-badge status-${submission.status.toLowerCase().replace(' ', '-')}`}>
-                          {formatStatus(submission.status)}
-                        </span>
-                      </td>
+                    currentModerateSubmissions.map((submission) => (
+                      <tr key={submission.id} className={`report-row ${submission.type.toLowerCase() === 'emergency sos' ? 'sos-row' : ''}`}>
+                        <td className="table-cell table-cell-type">{submission.type}</td>
+                        <td className="table-cell table-cell-description">{truncateDescription(submission.description)}</td>
+                        <td className="table-cell table-cell-location">{submission.location}</td>
+                        <td className="table-cell table-cell-date">{formatDate(submission.date)}</td>
+                        <td className="table-cell table-cell-status">
+                          <StatusTag status={submission.status} />
+                        </td>
                       <td className="table-cell table-cell-actions">
                         <div className="action-buttons">
                           <button 
@@ -1458,7 +1701,7 @@ function Dashboard({ onNavigateToReport }) {
             </table>
           </div>
           {filteredModerateSeverity.length > itemsPerPage && (
-            <div className="pagination">
+            <div className="pagination-wrapper" style={{width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem'}}>
               <button 
                 className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={currentPageModerate === 1}
@@ -1468,7 +1711,7 @@ function Dashboard({ onNavigateToReport }) {
                   <polyline points="15,18 9,12 15,6"></polyline>
                 </svg>
               </button>
-              <span className="pagination-info">
+              <span className="text-sm text-gray-600 font-medium">
                 Page {currentPageModerate} of {totalModeratePages}
               </span>
               <button 
@@ -1567,7 +1810,7 @@ function Dashboard({ onNavigateToReport }) {
             </table>
           </div>
           {filteredLowSeverity.length > itemsPerPage && (
-            <div className="pagination">
+            <div className="pagination-wrapper" style={{width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem'}}>
               <button 
                 className="pagination-btn-black disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={currentPageLow === 1}
@@ -1577,7 +1820,7 @@ function Dashboard({ onNavigateToReport }) {
                   <polyline points="15,18 9,12 15,6"></polyline>
                 </svg>
               </button>
-              <span className="pagination-info">
+              <span className="text-sm text-gray-600 font-medium">
                 Page {currentPageLow} of {totalLowPages}
               </span>
               <button 
@@ -1627,17 +1870,6 @@ function Dashboard({ onNavigateToReport }) {
                 disabled={updating}
               >
                 In Progress
-              </button>
-              <button 
-                className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 ${
-                  ['Resolved','Case Resolved'].includes(selectedReport?.status) 
-                    ? 'bg-black text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                onClick={() => updateReportStatus('Case Resolved')}
-                disabled={updating}
-              >
-                Case Resolved
               </button>
             </div>
             
