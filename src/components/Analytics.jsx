@@ -1035,7 +1035,7 @@ function Analytics() {
   // ML-based crime prediction functions
   const trainMLModels = async () => {
     try {
-      console.log('🤖 Training ML models...')
+      console.log('Training ML models...')
       
       // Fetch historical crime data
       const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
@@ -1129,7 +1129,7 @@ function Analytics() {
     try {
       // First, try to get ML predictions
       try {
-        console.log('🤖 Attempting ML-based predictions...')
+        console.log('Attempting ML-based predictions...')
         
         // Check if ML models are trained
         const statusResponse = await fetch(`${ML_API_BASE_URL}/api/model-status`)
@@ -1164,11 +1164,11 @@ function Analytics() {
           return
         }
       } catch (mlError) {
-        console.warn('⚠️ ML prediction failed, falling back to statistical model:', mlError.message)
+        console.warn('ML prediction failed, falling back to statistical model:', mlError.message)
       }
       
       // Fallback to statistical model
-      console.log('📊 Using statistical model as fallback...')
+      console.log('Using statistical model as fallback...')
       
       // Fetch historical crime data
       const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
@@ -1210,7 +1210,7 @@ function Analytics() {
       const insights = generateForecastInsights(forecast, historicalData)
       setForecastInsights(insights)
       
-      console.log('📊 Statistical forecast generated:', forecast.length, 'days')
+      console.log('Statistical forecast generated:', forecast.length, 'days')
       
     } catch (err) {
       setForecastError(err.message)
@@ -1403,9 +1403,9 @@ function Analytics() {
             fontSize: '0.9rem',
             color: '#0c4a6e'
           }}>
-            <strong>📊 Available Sections:</strong> ARIMA Forecasting → Real-time Chart → Crime Heatmap → <strong>🔮 Crime Forecasting & Prediction</strong>
+            <strong>Available Sections:</strong> ARIMA Forecasting → Real-time Chart → Crime Heatmap → <strong>Crime Forecasting & Prediction</strong>
             <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-              💡 <strong>Scroll down</strong> to see the Crime Forecasting section with AI-powered predictions!
+              <strong>Scroll down</strong> to see the Crime Forecasting section with AI-powered predictions!
             </div>
           </div>
         </div>
@@ -1901,7 +1901,7 @@ function Analytics() {
               fontSize: '0.9rem'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <strong style={{ color: '#1e293b', fontSize: '1rem' }}>📊 Real-time Crime Data</strong>
+                <strong style={{ color: '#1e293b', fontSize: '1rem' }}>Real-time Crime Data</strong>
                 {lastUpdate && (
                   <small style={{ color: '#6b7280' }}>
                     Last updated: {lastUpdate.toLocaleTimeString()}
@@ -2620,7 +2620,7 @@ function Analytics() {
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                 }}
               >
-                {forecastLoading ? '🤖 Training ML...' : '🤖 Train ML Models'}
+                {forecastLoading ? 'Training ML...' : 'Train ML Models'}
               </button>
               
               <button 
@@ -2655,7 +2655,7 @@ function Analytics() {
             <div className="forecast-results">
               {/* Forecast Insights */}
               <div className="forecast-insights">
-                <h4>📊 Forecast Summary</h4>
+                <h4>Forecast Summary</h4>
                 <div className="insights-grid">
                   <div className="insight-card">
                     <h5>Total Predicted Crimes</h5>
@@ -2684,7 +2684,7 @@ function Analytics() {
               
               {/* Forecast Chart */}
               <div className="forecast-chart">
-                <h4>📈 Daily Crime Predictions</h4>
+                <h4>Daily Crime Predictions</h4>
                 <div className="chart-container">
                   <svg className="forecast-svg" viewBox="0 0 800 300" preserveAspectRatio="xMidYMid meet">
                     {/* Grid lines */}
@@ -2792,7 +2792,7 @@ function Analytics() {
               {/* Recommendations */}
               {forecastInsights.recommendations.length > 0 && (
                 <div className="forecast-recommendations">
-                  <h4>💡 Recommendations</h4>
+                  <h4>Recommendations</h4>
                   <ul className="recommendations-list">
                     {forecastInsights.recommendations.map((rec, index) => (
                       <li key={index} className="recommendation-item">
