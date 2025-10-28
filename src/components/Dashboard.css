@@ -1205,13 +1205,13 @@
 .table-header {
   padding: 1rem 1.5rem;
   text-align: left;
-  color: white;
+  color: #000000;
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-right: 1px solid #4b5563;
-  background: #000000;
+  border-right: 1px solid #e5e7eb;
+  background: #ffffff;
   position: sticky;
   top: 0;
   z-index: 10;

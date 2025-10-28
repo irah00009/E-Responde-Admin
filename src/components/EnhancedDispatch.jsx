@@ -388,13 +388,14 @@ function EnhancedDispatch() {
 
       console.log('Dispatch info created:', dispatchInfo)
 
-      // Update the crime report status to Dispatched
+      // Update the crime report status to Assigned (waiting for officer confirmation)
       try {
         console.log('Updating crime report...', selectedReport.id)
         const reportRef = ref(realtimeDb, `civilian/civilian crime reports/${selectedReport.id}`)
         await update(reportRef, {
-          status: 'Dispatched',
-          dispatchInfo: dispatchInfo
+          status: 'Assigned',
+          dispatchInfo: dispatchInfo,
+          assignmentStatus: 'Pending Confirmation'
         })
         console.log('Crime report updated successfully')
       } catch (error) {
@@ -402,14 +403,14 @@ function EnhancedDispatch() {
         throw new Error(`Failed to update crime report: ${error.message}`)
       }
 
-      // Update officer status to Dispatched immediately when assigned
+      // Update officer status to Standby when assigned (waiting for confirmation)
       try {
-        console.log('Updating officer status to Dispatched...', selectedOfficer)
+        console.log('Updating officer status to Standby...', selectedOfficer)
         const officerRef = ref(realtimeDb, `police/police account/${selectedOfficer}`)
         await update(officerRef, {
-          status: 'Dispatched'
+          status: 'Standby'
         })
-        console.log('Officer status updated to Dispatched successfully')
+        console.log('Officer status updated to Standby successfully')
       } catch (error) {
         console.error('Error updating officer status:', error)
         throw new Error(`Failed to update officer status: ${error.message}`)
@@ -526,8 +527,91 @@ function EnhancedDispatch() {
       return "status-received";
     } else if (normalizedStatus === "dispatched") {
       return "status-dispatched";
+    } else if (normalizedStatus === "assigned") {
+      return "status-assigned";
     } else {
       return "status-pending";
+    }
+  }
+
+  // Handle when police officer confirms an assignment
+  const handleOfficerConfirm = async (dispatch) => {
+    console.log('Officer confirmation triggered for:', dispatch)
+    
+    if (!dispatch.assignedOfficer) {
+      alert('No officer information available for this dispatch')
+      return
+    }
+
+    try {
+      console.log('Updating officer status to Dispatched after confirmation...')
+      // Update officer status to Dispatched after confirmation
+      const officerRef = ref(realtimeDb, `police/police account/${dispatch.assignedOfficer.id}`)
+      await update(officerRef, {
+        status: 'Dispatched',
+        currentAssignment: {
+          ...dispatch.currentAssignment,
+          confirmedAt: new Date().toISOString(),
+          assignmentStatus: 'Confirmed'
+        }
+      })
+      console.log('Officer status updated to Dispatched successfully')
+
+      console.log('Updating report status to Dispatched after confirmation...')
+      // Update report status to Dispatched after officer confirmation
+      const reportRef = ref(realtimeDb, `civilian/civilian crime reports/${dispatch.id}`)
+      await update(reportRef, {
+        status: 'Dispatched',
+        assignmentStatus: 'Confirmed',
+        confirmedAt: new Date().toISOString()
+      })
+      console.log('Report status updated to Dispatched successfully')
+
+      // Update dispatch record to show confirmed status
+      const dispatchRef = ref(realtimeDb, `dispatches/${dispatch.dispatchId}`)
+      await update(dispatchRef, {
+        status: 'Confirmed',
+        confirmedAt: new Date().toISOString(),
+        confirmedBy: dispatch.assignedOfficer.name
+      })
+
+      // Create notification for admin about the confirmation
+      const adminNotificationId = `confirm_${dispatch.id}_${Date.now()}`
+      const adminNotificationRef = ref(realtimeDb, `admin/notifications/${adminNotificationId}`)
+      
+      const adminNotificationData = {
+        id: adminNotificationId,
+        type: 'assignment_confirmed',
+        title: 'Assignment Confirmed',
+        message: `Officer ${dispatch.assignedOfficer.name} has confirmed the assignment for ${dispatch.crimeType || 'emergency'} report.`,
+        reportId: dispatch.id,
+        reportDetails: {
+          crimeType: dispatch.crimeType || 'Emergency',
+          location: dispatch.location?.address || 'Location not available',
+          reporterName: dispatch.reporterName || 'Anonymous',
+          description: dispatch.description || 'No description provided'
+        },
+        confirmedOfficer: {
+          id: dispatch.assignedOfficer.id,
+          name: dispatch.assignedOfficer.name,
+          email: dispatch.assignedOfficer.email
+        },
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        isActive: true
+      }
+
+      await update(adminNotificationRef, adminNotificationData)
+      console.log('Admin notification created successfully')
+
+      alert(`Officer ${dispatch.assignedOfficer.name} has confirmed the assignment. The report status is now Dispatched.`)
+      
+      // Refresh data to show updated status
+      await fetchData()
+
+    } catch (error) {
+      console.error('Error processing officer confirmation:', error)
+      alert('Failed to process officer confirmation. Please try again.')
     }
   }
 
@@ -564,6 +648,7 @@ function EnhancedDispatch() {
       await update(reportRef, {
         status: 'Pending',
         dispatchInfo: null,
+        assignmentStatus: null,
         assignmentDeclined: {
           declinedBy: dispatch.assignedOfficer.name,
           declinedAt: new Date().toISOString(),
