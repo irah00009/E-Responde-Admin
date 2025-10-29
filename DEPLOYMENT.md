@@ -17,14 +17,15 @@ git push origin main
 ### Step 2: Deploy on Render
 
 1. **Go to [Render.com](https://render.com)** and sign in
-2. **Click "New +"** → **"Static Site"**
+2. **Click "New +"** → **"Web Service"**
 3. **Connect your GitHub repository**
 4. **Configure the deployment:**
    - **Name:** `e-responde-admin`
    - **Branch:** `main`
    - **Root Directory:** Leave empty (or `Testing Forecasting/E-Responde-Admin` if needed)
+   - **Runtime:** `Node`
    - **Build Command:** `npm install && npm run build`
-   - **Publish Directory:** `dist`
+   - **Start Command:** `npm start`
 
 ### Step 3: Environment Variables (Optional)
 If you want to use different Firebase config, add these in Render dashboard:
