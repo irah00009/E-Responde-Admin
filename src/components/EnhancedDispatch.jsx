@@ -648,7 +648,7 @@ function EnhancedDispatch() {
       await update(reportRef, {
         status: 'Pending',
         dispatchInfo: null,
-        assignmentStatus: null,
+        assignmentStatus: 'Declined',
         assignmentDeclined: {
           declinedBy: dispatch.assignedOfficer.name,
           declinedAt: new Date().toISOString(),
