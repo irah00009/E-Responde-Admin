@@ -126,6 +126,7 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
         ...reportData,
         status: 'Pending',
         dispatchedTo: null,
+        assignmentStatus: 'Declined',
         assignmentDeclined: {
           declinedBy: `${policeData.firstName} ${policeData.lastName}`,
           declinedAt: new Date().toISOString(),
