@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { getDatabase, ref, get, onValue, off } from 'firebase/database'
 import { app } from '../firebase'
 import LineChart from './LineChart'
+import ForecastInterpretation from './ForecastInterpretation'
 import { 
   performLocalForecasting, 
   getAvailableCrimeTypes, 
@@ -533,16 +534,28 @@ const AnalyticsDashboard = () => {
 
 
       {selectedCrimeType && selectedLocation && (
-        <div className="chart-container">
-          <LineChart
-            historicalData={chartData.historical}
-            forecastData={chartData.forecast}
-            title={`${selectedCrimeType} Analysis in ${selectedLocation}`}
-            showConfidenceInterval={true}
-            confidenceUpper={chartData.confidenceUpper}
-            confidenceLower={chartData.confidenceLower}
-          />
-        </div>
+        <>
+          <div className="chart-container">
+            <LineChart
+              historicalData={chartData.historical}
+              forecastData={chartData.forecast}
+              title={`${selectedCrimeType} Analysis in ${selectedLocation}`}
+              showConfidenceInterval={true}
+              confidenceUpper={chartData.confidenceUpper}
+              confidenceLower={chartData.confidenceLower}
+            />
+          </div>
+          
+          {forecastingData && forecastingData.success && (
+            <ForecastInterpretation
+              forecastData={forecastingData}
+              crimeType={selectedCrimeType}
+              location={selectedLocation}
+              historicalData={chartData.historical}
+              forecastDataPoints={chartData.forecast}
+            />
+          )}
+        </>
       )}
 
 
