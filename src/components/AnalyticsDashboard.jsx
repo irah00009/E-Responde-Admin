@@ -48,10 +48,13 @@ const AnalyticsDashboard = () => {
         barangay === 'Barangay 41' || barangay === 'Barangay 43'
       )
       
-      console.log('Available crime types:', crimeTypes)
+      // Map Emergency SOS -> Others for display in dropdown
+      const mappedCrimeTypes = Array.from(new Set((crimeTypes || []).map(t => t === 'Emergency SOS' ? 'Others' : t)))
+
+      console.log('Available crime types:', mappedCrimeTypes)
       console.log('Available barangays:', targetBarangays)
       
-      setAvailableCrimeTypes(crimeTypes)
+      setAvailableCrimeTypes(mappedCrimeTypes)
       setAvailableLocations(targetBarangays.length > 0 ? targetBarangays : ['Barangay 41', 'Barangay 43'])
     } catch (err) {
       console.error('Error loading local data:', err)
@@ -158,8 +161,13 @@ const AnalyticsDashboard = () => {
       
       setCrimeData(reportsArray)
       
-      // Extract unique crime types and barangays from database
-      const crimeTypes = [...new Set(reportsArray.map(r => r.crimeType || r.type || r.crime_type).filter(Boolean))]
+      // Extract unique crime types and barangays from database, map Emergency SOS -> Others
+      const crimeTypes = [...new Set(
+        reportsArray
+          .map(r => r.crimeType || r.type || r.crime_type)
+          .filter(Boolean)
+          .map(t => t === 'Emergency SOS' ? 'Others' : String(t))
+      )]
       const barangays = [...new Set(reportsArray.map(r => r.barangay).filter(Boolean))]
       
       // Filter to only show Barangay 41 and 43 if they exist in the data
@@ -218,8 +226,13 @@ const AnalyticsDashboard = () => {
     const filtered = processedReports.filter(report => {
       const reportType = String(report.crimeType || report.type || report.crime_type || '')
       const reportBarangay = report.geotagging?.barangay
+
+      // Treat Emergency SOS as Others when matching selection
+      const typeMatches = crimeType === 'Others'
+        ? (reportType === 'Emergency SOS' || reportType === 'Others')
+        : reportType === crimeType
       
-      return reportType === crimeType && reportBarangay === location && report.date
+      return typeMatches && reportBarangay === location && report.date
     })
 
     // Sort by date
@@ -327,8 +340,13 @@ const AnalyticsDashboard = () => {
         
         setCrimeData(reportsArray)
         
-        // Update available options
-        const crimeTypes = [...new Set(reportsArray.map(r => r.crimeType || r.type || r.crime_type).filter(Boolean))]
+        // Update available options (map Emergency SOS -> Others)
+        const crimeTypes = [...new Set(
+          reportsArray
+            .map(r => r.crimeType || r.type || r.crime_type)
+            .filter(Boolean)
+            .map(t => t === 'Emergency SOS' ? 'Others' : String(t))
+        )]
         const barangays = [...new Set(reportsArray.map(r => r.barangay).filter(Boolean))]
         
         // Filter to only show Barangay 41 and 43 if they exist in the data

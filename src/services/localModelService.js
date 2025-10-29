@@ -68,9 +68,14 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
       const targetBarangay = barangay.trim().toLowerCase();
       const targetCrime = crimeType.trim().toLowerCase();
 
+      // Treat "others" as matching "emergency sos" records as well
+      const crimeMatches = targetCrime === 'others'
+        ? (reportCrime === 'others' || reportCrime === 'emergency sos')
+        : reportCrime === targetCrime
+
       return (
         reportBarangay === targetBarangay &&
-        reportCrime === targetCrime &&
+        crimeMatches &&
         report.dateTime
       );
     });
