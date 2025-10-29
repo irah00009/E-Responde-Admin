@@ -344,15 +344,22 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
 
       try {
         setLoading(true)
+        setError('')
         const db = getDatabase(app)
+        
+        console.log('Fetching report:', { reportId, alertType })
         
         // Determine the correct path based on alert type
         const reportPath = alertType === 'sos' 
           ? `sos_alerts/${reportId}` 
           : `civilian/civilian crime reports/${reportId}`
         
+        console.log('Fetching from path:', reportPath)
+        
         const reportRef = ref(db, reportPath)
         const snapshot = await get(reportRef)
+        
+        console.log('Report snapshot exists:', snapshot.exists())
         
         if (snapshot.exists()) {
           const data = snapshot.val()
@@ -497,18 +504,23 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
           }
 
         } else {
-          setError('Report not found')
+          console.error('Report not found at path:', reportPath)
+          console.error('Report ID:', reportId)
+          console.error('Alert type:', alertType)
+          setError(`Report not found. Path: ${reportPath}, ID: ${reportId}`)
         }
       } catch (err) {
         console.error('Error fetching report:', err)
-        setError('Failed to load report data')
+        console.error('Report ID:', reportId)
+        console.error('Alert type:', alertType)
+        setError(`Failed to load report data: ${err.message}`)
       } finally {
         setLoading(false)
       }
     }
 
     fetchReportData()
-  }, [reportId])
+  }, [reportId, alertType])
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {

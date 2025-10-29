@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useAuth } from '../providers/AuthProvider'
+import NotificationsBell from '../components/NotificationsBell'
 
 export default function Header({ onNavigateToReport }) {
   const { user, claims } = useAuth()
@@ -16,7 +17,9 @@ export default function Header({ onNavigateToReport }) {
         <div className="flex-1">
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4" style={{ position: 'relative', zIndex: 50 }}>
+          <NotificationsBell />
+          
           <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-xl border border-gray-200">
             <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100">
               <img 

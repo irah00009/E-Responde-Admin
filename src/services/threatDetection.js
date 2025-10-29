@@ -14,7 +14,7 @@ const THREAT_KEYWORDS = [
   
   // Filipino keywords
   'baril', 'kutsilyo', 'bomba', 'pamamaril', 'pagpatay', 'pumatay', 'patayin',
-  'saksak', 'saksakin', 'sugat', 'sugatan', 'bugbog', 'bugbugin', 'away',
+  'saksak', 'saksakin', 'sinaksak','sugat', 'sugatan', 'bugbog', 'bugbugin', 'away',
   'awayin', 'gulo', 'guluhin', 'riot', 'karahasan', 'mapanganib', 'delikado',
   'takot', 'katakutan', 'banta', 'bantaan', 'pananakot', 'takutan',
   'hostage', 'kidnap', 'kidnapin', 'terorista', 'terorismo', 'bomba',
