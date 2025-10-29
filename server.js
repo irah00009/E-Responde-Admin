@@ -1,7 +1,6 @@
 import express from 'express'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { createProxyMiddleware } from 'http-proxy-middleware'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
