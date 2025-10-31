@@ -122,6 +122,58 @@ const ForecastInterpretation = ({
   // Create cards array
   const cards = [
     {
+      id: 'statistics',
+      title: 'Model Statistics',
+      icon: (
+        <svg className="section-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        </svg>
+      ),
+      content: forecastData?.statistics ? (
+        <div className="statistics-display">
+          {forecastData.statistics.forecast_mae > 0 && (
+            <>
+              <div className="stat-item">
+                <span className="stat-label">Forecast MAE:</span>
+                <span className="stat-value">{forecastData.statistics.forecast_mae.toFixed(2)}</span>
+                <span className="stat-description">Out-of-sample error</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Forecast RMSE:</span>
+                <span className="stat-value">{forecastData.statistics.forecast_rmse.toFixed(2)}</span>
+                <span className="stat-description">Out-of-sample large errors</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-label">Forecast Bias:</span>
+                <span className="stat-value">{forecastData.statistics.forecast_bias.toFixed(2)}</span>
+                <span className="stat-description">Future prediction bias</span>
+              </div>
+            </>
+          )}
+          <div className="stat-item">
+            <span className="stat-label">R² Score:</span>
+            <span className="stat-value">{forecastData.statistics.r_squared ? (forecastData.statistics.r_squared * 100).toFixed(1) + '%' : 'N/A'}</span>
+            <span className="stat-description">Model accuracy</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Trend:</span>
+            <span className="stat-value">{forecastData.statistics.trend > 0 ? 'Increasing' : forecastData.statistics.trend < 0 ? 'Decreasing' : 'Stable'}</span>
+            <span className="stat-description">Crime trend direction</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Data Points:</span>
+            <span className="stat-value">{forecastData.statistics.data_points || 0}</span>
+            <span className="stat-description">Historical months analyzed</span>
+          </div>
+          <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+            <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: '1.6', color: '#1e3a8a' }}>
+              <strong>How to read:</strong> Training metrics show model fit on historical data. Forecast metrics (shown when available) show expected prediction accuracy. Lower MAE/RMSE = better accuracy. Bias close to zero = no systematic over/under-prediction.
+            </p>
+          </div>
+        </div>
+      ) : <p className="section-text">Statistics not available</p>
+    },
+    {
       id: 'summary',
       title: 'Summary',
       icon: (

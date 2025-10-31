@@ -140,6 +140,9 @@ export const generateLocalForecast = (historicalData, months = 6) => {
       statistics: {
         trend: 0,
         r_squared: 0,
+        forecast_mae: 0,
+        forecast_rmse: 0,
+        forecast_bias: 0,
         data_points: 0
       }
     }
@@ -171,7 +174,48 @@ export const generateLocalForecast = (historicalData, months = 6) => {
   const ssTot = y.reduce((sum, yi) => sum + Math.pow(yi - yMean, 2), 0)
   const rSquared = ssTot === 0 ? 1 : Math.max(0, 1 - (ssRes / ssTot))
   
-  console.log(`📈 ARIMA-like trend: ${slope.toFixed(3)}, R²: ${rSquared.toFixed(3)}`)
+  // Calculate Forecast metrics using walk-forward validation (last 20% of data)
+  let forecastMae = 0
+  let forecastRmse = 0
+  let forecastBias = 0
+  if (n >= 5) {
+    const trainSize = Math.floor(n * 0.8) // Use 80% for training
+    const testStart = trainSize
+    
+    // Calculate slope and intercept using only training data
+    const trainX = x.slice(0, trainSize)
+    const trainY = y.slice(0, trainSize)
+    const trainN = trainSize
+    
+    const trainSumX = trainX.reduce((a, b) => a + b, 0)
+    const trainSumY = trainY.reduce((a, b) => a + b, 0)
+    const trainSumXY = trainX.reduce((sum, xi, i) => sum + xi * trainY[i], 0)
+    const trainSumXX = trainX.reduce((sum, xi) => sum + xi * xi, 0)
+    
+    const trainDenominator = (trainN * trainSumXX - trainSumX * trainSumX)
+    const trainSlope = trainDenominator === 0 ? 0 : (trainN * trainSumXY - trainSumX * trainSumY) / trainDenominator
+    const trainIntercept = (trainSumY - trainSlope * trainSumX) / trainN
+    
+    // Test on remaining 20% of data (out-of-sample)
+    const testData = []
+    for (let i = testStart; i < n; i++) {
+      const predicted = trainSlope * x[i] + trainIntercept
+      testData.push({
+        actual: y[i],
+        predicted: predicted
+      })
+    }
+    
+    // Calculate metrics on test set
+    if (testData.length > 0) {
+      forecastMae = testData.reduce((sum, d) => sum + Math.abs(d.actual - d.predicted), 0) / testData.length
+      forecastRmse = Math.sqrt(testData.reduce((sum, d) => sum + Math.pow(d.actual - d.predicted, 2), 0) / testData.length)
+      forecastBias = testData.reduce((sum, d) => sum + (d.actual - d.predicted), 0) / testData.length
+    }
+  }
+  
+  console.log(`📈 Trend: ${slope.toFixed(3)}, R²: ${rSquared.toFixed(3)}`)
+  console.log(`🔮 Forecast MAE: ${forecastMae.toFixed(3)}, RMSE: ${forecastRmse.toFixed(3)}, Bias: ${forecastBias.toFixed(3)}`)
   
   // Generate forecast with ARIMA-like confidence intervals
   const lastDate = new Date(historicalData[historicalData.length - 1].date)
@@ -212,6 +256,9 @@ export const generateLocalForecast = (historicalData, months = 6) => {
     statistics: {
       trend: slope,
       r_squared: rSquared,
+      forecast_mae: forecastMae, // Out-of-sample forecast MAE
+      forecast_rmse: forecastRmse, // Out-of-sample forecast RMSE
+      forecast_bias: forecastBias, // Out-of-sample forecast Bias
       data_points: n
     }
   }
@@ -264,6 +311,9 @@ export const performLocalForecasting = async (crimeType, location, months = 6) =
       statistics: {
         trend: 0,
         r_squared: 0,
+        forecast_mae: 0,
+        forecast_rmse: 0,
+        forecast_bias: 0,
         data_points: 0
       }
     }
