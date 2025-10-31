@@ -165,11 +165,6 @@ const ForecastInterpretation = ({
             <span className="stat-value">{forecastData.statistics.data_points || 0}</span>
             <span className="stat-description">Historical months analyzed</span>
           </div>
-          <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#f0f9ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-            <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: '1.6', color: '#1e3a8a' }}>
-              <strong>How to read:</strong> Training metrics show model fit on historical data. Forecast metrics (shown when available) show expected prediction accuracy. Lower MAE/RMSE = better accuracy. Bias close to zero = no systematic over/under-prediction.
-            </p>
-          </div>
         </div>
       ) : <p className="section-text">Statistics not available</p>
     },
