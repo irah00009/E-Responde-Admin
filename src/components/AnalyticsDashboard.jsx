@@ -43,15 +43,20 @@ const AnalyticsDashboard = () => {
       console.log('Loading available filters from Firebase')
       const { barangays, crimeTypes } = await fetchAvailableFilters()
       
+      // Filter out Emergency SOS from crime types
+      const filteredCrimeTypes = crimeTypes.filter(type => 
+        type.toLowerCase() !== 'emergency sos' && type.toLowerCase() !== 'emergencysos'
+      )
+      
       // Filter to only show Barangay 41 and 43 if they exist in the data
       const targetBarangays = barangays.filter(barangay => 
         barangay === 'Barangay 41' || barangay === 'Barangay 43'
       )
       
-      console.log('Available crime types:', crimeTypes)
+      console.log('Available crime types:', filteredCrimeTypes)
       console.log('Available barangays:', targetBarangays)
       
-      setAvailableCrimeTypes(crimeTypes)
+      setAvailableCrimeTypes(filteredCrimeTypes)
       setAvailableLocations(targetBarangays.length > 0 ? targetBarangays : ['Barangay 41', 'Barangay 43'])
     } catch (err) {
       console.error('Error loading local data:', err)
@@ -160,6 +165,10 @@ const AnalyticsDashboard = () => {
       
       // Extract unique crime types and barangays from database
       const crimeTypes = [...new Set(reportsArray.map(r => r.crimeType || r.type || r.crime_type).filter(Boolean))]
+      // Filter out Emergency SOS from crime types
+      const filteredCrimeTypes = crimeTypes.filter(type => 
+        type.toLowerCase() !== 'emergency sos' && type.toLowerCase() !== 'emergencysos'
+      )
       const barangays = [...new Set(reportsArray.map(r => r.barangay).filter(Boolean))]
       
       // Filter to only show Barangay 41 and 43 if they exist in the data
@@ -167,10 +176,10 @@ const AnalyticsDashboard = () => {
         barangay === 'Barangay 41' || barangay === 'Barangay 43'
       )
       
-      setAvailableCrimeTypes(crimeTypes)
+      setAvailableCrimeTypes(filteredCrimeTypes)
       setAvailableLocations(targetBarangays.length > 0 ? targetBarangays : ['Barangay 41', 'Barangay 43'])
       
-      console.log('📈 Available crime types:', crimeTypes)
+      console.log('📈 Available crime types:', filteredCrimeTypes)
       console.log('📍 Available barangays:', targetBarangays)
       
       // Debug: Show sample reports with their crime types and barangays
@@ -329,6 +338,10 @@ const AnalyticsDashboard = () => {
         
         // Update available options
         const crimeTypes = [...new Set(reportsArray.map(r => r.crimeType || r.type || r.crime_type).filter(Boolean))]
+        // Filter out Emergency SOS from crime types
+        const filteredCrimeTypes = crimeTypes.filter(type => 
+          type.toLowerCase() !== 'emergency sos' && type.toLowerCase() !== 'emergencysos'
+        )
         const barangays = [...new Set(reportsArray.map(r => r.barangay).filter(Boolean))]
         
         // Filter to only show Barangay 41 and 43 if they exist in the data
@@ -336,7 +349,7 @@ const AnalyticsDashboard = () => {
           barangay === 'Barangay 41' || barangay === 'Barangay 43'
         )
         
-        setAvailableCrimeTypes(crimeTypes)
+        setAvailableCrimeTypes(filteredCrimeTypes)
         setAvailableLocations(targetBarangays.length > 0 ? targetBarangays : ['Barangay 41', 'Barangay 43'])
       }
     })
