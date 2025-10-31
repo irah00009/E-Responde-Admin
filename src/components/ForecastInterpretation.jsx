@@ -167,7 +167,7 @@ const ForecastInterpretation = ({
           </div>
           <div className="how-to-read-box">
             <p className="how-to-read-text">
-              <strong>How to read:</strong> Forecast metrics (shown when available) show expected prediction accuracy. Lower MAE/RMSE = better accuracy. Bias close to zero = no systematic over/under-prediction.
+              <strong>How to read:</strong> Forecast metrics show expected prediction accuracy. Lower MAE/RMSE = better accuracy. Bias close to zero = no systematic over/under-prediction.
             </p>
           </div>
         </div>
