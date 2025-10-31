@@ -181,14 +181,18 @@ def evaluate():
 if __name__ == '__main__':
     # Load model on startup
     print("Loading model...")
+    port = int(os.environ.get('PORT', 5001))
+    # Disable debug mode in production (Render sets PORT automatically)
+    debug_mode = os.environ.get('FLASK_ENV') == 'development' or os.environ.get('ENVIRONMENT') == 'development'
+    
     if load_model():
         print("Model loaded successfully!")
         print("=" * 60)
         print("Starting threat detection model server...")
         print("=" * 60)
         print(f"Server running at:")
-        print(f"  http://localhost:5001")
-        print(f"  http://127.0.0.1:5001")
+        print(f"  http://0.0.0.0:{port}")
+        print(f"  Port: {port}")
         print("")
         print("Available endpoints:")
         print("  GET  /           - API information")
@@ -197,12 +201,12 @@ if __name__ == '__main__':
         print("  POST /predict-batch - Batch predictions")
         print("  POST /evaluate   - Model evaluation")
         print("=" * 60)
-        app.run(host='0.0.0.0', port=5001, debug=True)
+        app.run(host='0.0.0.0', port=port, debug=debug_mode)
     else:
         print("Warning: Model not found. Server started without model.")
         print("Make sure you run 'python run_training.py' first to train the model.")
         print("=" * 60)
-        print("Server running at http://localhost:5001")
+        print(f"Server running at http://0.0.0.0:{port}")
         print("=" * 60)
-        app.run(host='0.0.0.0', port=5001, debug=True)
+        app.run(host='0.0.0.0', port=port, debug=debug_mode)
 

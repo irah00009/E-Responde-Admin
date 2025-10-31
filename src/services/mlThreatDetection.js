@@ -3,7 +3,7 @@
  * Integrates with Python ML server for threat detection
  */
 
-const ML_SERVER_URL = 'http://localhost:5001';
+const ML_SERVER_URL = import.meta.env.VITE_ML_SERVER_URL || 'http://localhost:5001';
 
 class MLThreatDetectionService {
   constructor(serverUrl = ML_SERVER_URL) {

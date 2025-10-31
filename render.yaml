@@ -1,4 +1,16 @@
 services:
+  # Python ML Server (Web Service) - Deploy this first
+  - type: web
+    name: e-responde-admin-ml-server
+    env: python
+    buildCommand: cd ml-threat-detection && pip install -r requirements.txt
+    startCommand: cd ml-threat-detection && python threat_model_server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+    healthCheckPath: /health
+
+  # React Frontend (Web Service - Node.js)
   - type: web
     name: e-responde-admin
     env: node
@@ -23,3 +35,9 @@ services:
         value: 1:343953743058:web:489c46e1439e7e9fe7e10b
       - key: VITE_FIREBASE_MEASUREMENT_ID
         value: G-MDLC7VPELW
+      # IMPORTANT: After deploying ML server, set VITE_ML_SERVER_URL manually in Render dashboard:
+      # Go to e-responde-admin service > Environment > Add env var
+      # Key: VITE_ML_SERVER_URL
+      # Value: https://e-responde-admin-ml-server.onrender.com (use your actual ML server URL)
+      - key: VITE_ML_SERVER_URL
+        value: https://e-responde-admin-ml-server.onrender.com
