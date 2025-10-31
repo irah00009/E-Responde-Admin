@@ -1,0 +1,26 @@
+{
+  "Immediate": {
+    "threshold": 0.15000000000000002,
+    "avg_similarity": 0.257502792493338,
+    "min_similarity": 0.15120834052351723,
+    "max_similarity": 0.3474123052964919
+  },
+  "High": {
+    "threshold": 0.15000000000000002,
+    "avg_similarity": 0.24985086342806137,
+    "min_similarity": 0.1484018542258015,
+    "max_similarity": 0.3934734617266571
+  },
+  "Moderate": {
+    "threshold": 0.20000000000000004,
+    "avg_similarity": 0.24304394680266306,
+    "min_similarity": 0.14099315370454,
+    "max_similarity": 0.3435119719654301
+  },
+  "Low": {
+    "threshold": 0.20000000000000004,
+    "avg_similarity": 0.24783925476968563,
+    "min_similarity": 0.13381969522383833,
+    "max_similarity": 0.3527633396343607
+  }
+}
