@@ -165,6 +165,11 @@ const ForecastInterpretation = ({
             <span className="stat-value">{forecastData.statistics.data_points || 0}</span>
             <span className="stat-description">Historical months analyzed</span>
           </div>
+          <div className="how-to-read-box">
+            <p className="how-to-read-text">
+              <strong>How to read:</strong> Forecast metrics (shown when available) show expected prediction accuracy. Lower MAE/RMSE = better accuracy. Bias close to zero = no systematic over/under-prediction.
+            </p>
+          </div>
         </div>
       ) : <p className="section-text">Statistics not available</p>
     },
