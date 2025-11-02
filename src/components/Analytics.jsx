@@ -195,16 +195,36 @@ function Analytics() {
         const trends = {}
         
         Object.values(reportsData).forEach(report => {
-          const crimeType = report.crimeType || 'Unknown'
-          const month = new Date(report.dateTime || report.createdAt).toISOString().substring(0, 7)
+          // Normalize crime type
+          let crimeType = (report.crimeType || report.type || report.crime_type || 'Unknown').trim()
+          if (crimeType === 'Others' || crimeType === 'Emergency SOS') {
+            crimeType = 'Other'
+          }
           
-          if (!trends[month]) {
-            trends[month] = {}
+          // Try multiple date fields
+          const dateStr = report.dateTime || report.createdAt || report.timestamp || report.date
+          if (!dateStr) return
+          
+          try {
+            const date = new Date(dateStr)
+            if (isNaN(date.getTime())) {
+              console.warn('Invalid date for report:', report.id, dateStr)
+              return
+            }
+            
+            const month = date.toISOString().substring(0, 7)
+            
+            if (!trends[month]) {
+              trends[month] = {}
+            }
+            if (!trends[month][crimeType]) {
+              trends[month][crimeType] = 0
+            }
+            trends[month][crimeType]++
+          } catch (dateErr) {
+            console.warn('Error parsing date for report:', report.id, dateStr, dateErr)
+            return
           }
-          if (!trends[month][crimeType]) {
-            trends[month][crimeType] = 0
-          }
-          trends[month][crimeType]++
         })
         
         const trendArray = Object.keys(trends).map(month => ({
@@ -213,9 +233,14 @@ function Analytics() {
         })).sort((a, b) => a.month.localeCompare(b.month))
         
         setCrimeTrends(trendArray)
+        console.log(`✅ Loaded ${trendArray.length} months of crime trends`)
+      } else {
+        console.warn('⚠️ No crime reports found for trends')
+        setCrimeTrends([])
       }
     } catch (err) {
-      console.error('Error fetching crime trends:', err)
+      console.error('❌ Error fetching crime trends:', err)
+      setError(err.message)
     }
   }
 

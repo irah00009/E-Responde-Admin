@@ -10,6 +10,7 @@ import VoIPManagement from './components/VoIPManagement.jsx'
 import SOSManagement from './components/SOSManagement.jsx'
 import EmergencyContactsManagement from './components/EmergencyContactsManagement.jsx'
 import ViewReport from './components/ViewReport.jsx'
+import CrimeReportForm from './components/CrimeReportForm.jsx'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 
 function ViewReportRoute() {
@@ -52,6 +53,7 @@ const router = createBrowserRouter([
       { path: 'voip', element: <VoIPManagement /> },
       { path: 'sos', element: <SOSManagement /> },
       { path: 'emergency-contacts', element: <EmergencyContactsManagement /> },
+      { path: 'crime-report', element: <CrimeReportForm /> },
       {
         path: 'accounts',
         element: <AccountManagement />
