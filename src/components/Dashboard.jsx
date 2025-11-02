@@ -4,7 +4,7 @@ import { getDatabase, ref, onValue, off, update, get, push, set } from 'firebase
 import { app, iceServers } from '../firebase'
 import { useAuth } from '../providers/AuthProvider'
 import StatusTag from './StatusTag'
-import ThreatDetectionService from '../services/threatDetection'
+import MLThreatDetectionService from '../services/mlThreatDetection.js'
 import './Dashboard.css'
 
 function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
@@ -24,8 +24,8 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [highlightedReportId, setHighlightedReportId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
   
-  // Threat Detection State
-  const [threatDetectionService] = useState(() => new ThreatDetectionService());
+  // Threat Detection State - Using ML Cosine Similarity Model
+  const [threatDetectionService] = useState(() => new MLThreatDetectionService());
   const [threatAnalysisResults, setThreatAnalysisResults] = useState([]);
   const [isAnalyzingThreats, setIsAnalyzingThreats] = useState(false);
   const [escalatedReports, setEscalatedReports] = useState([]);
@@ -77,6 +77,8 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [alarmEnabled, setAlarmEnabled] = useState(true);
   const [newReportNotification, setNewReportNotification] = useState(null);
   const [lastReportIds, setLastReportIds] = useState(new Set());
+  // Use ref to track previous report IDs synchronously (for real-time detection)
+  const lastReportIdsRef = useRef(new Set());
   
   // WebRTC refs
   const peerConnectionRef = useRef(null);
@@ -91,51 +93,57 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   
 
   // Filter reports by severity levels
+  // Immediate: Only reports with severity="immediate" OR Emergency SOS
+  // High/Moderate/Low reports with threatDetected stay in their own sections
   const immediateSeverityReports = recentSubmissions.filter(submission => {
     const isImmediate = typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'immediate';
     const isEmergencySOS = typeof submission.type === 'string' && submission.type.toLowerCase() === 'emergency sos';
-    const isThreatDetected = submission.threatDetected === true;
-    const isAiEscalated = submission.aiEscalated === true;
     
-    const shouldInclude = isImmediate || isEmergencySOS || isThreatDetected || isAiEscalated;
+    // Only show truly immediate severity or Emergency SOS in Immediate section
+    // Don't pull High/Moderate/Low reports here even if they have threats
+    const shouldInclude = isImmediate || isEmergencySOS;
     
     if (shouldInclude) {
       console.log(`Including in immediate severity:`, {
         id: submission.id,
         type: submission.type,
         severity: submission.severity,
-        threatDetected: submission.threatDetected,
-        aiEscalated: submission.aiEscalated,
-        reason: isImmediate ? 'immediate severity' : 
-                isEmergencySOS ? 'emergency sos' : 
-                isThreatDetected ? 'threat detected' : 
-                isAiEscalated ? 'ai escalated' : 'unknown'
+        reason: isImmediate ? 'immediate severity' : 'emergency sos'
       });
     }
     
     return shouldInclude;
   });
 
-  const highSeverityReports = recentSubmissions.filter(submission => 
-    typeof submission.severity === 'string' && 
-    submission.severity.toLowerCase() === 'high' &&
-    !submission.threatDetected && // Exclude AI-detected threats
-    !submission.aiEscalated // Exclude AI-escalated reports
-  );
+  const highSeverityReports = recentSubmissions.filter(submission => {
+    const isHighSeverity = typeof submission.severity === 'string' && 
+                          submission.severity.toLowerCase() === 'high';
+    const isEmergencySOS = typeof submission.type === 'string' && 
+                         submission.type.toLowerCase() === 'emergency sos';
+    // Include high severity reports regardless of threatDetected status
+    // But exclude Emergency SOS (should only be in Immediate section)
+    return isHighSeverity && !isEmergencySOS;
+  });
 
-  const moderateSeverityReports = recentSubmissions.filter(submission => 
-    typeof submission.severity === 'string' && 
-    submission.severity.toLowerCase() === 'moderate' &&
-    !submission.threatDetected && // Exclude AI-detected threats
-    !submission.aiEscalated // Exclude AI-escalated reports
-  );
+  const moderateSeverityReports = recentSubmissions.filter(submission => {
+    const isModerateSeverity = typeof submission.severity === 'string' && 
+                              submission.severity.toLowerCase() === 'moderate';
+    const isEmergencySOS = typeof submission.type === 'string' && 
+                           submission.type.toLowerCase() === 'emergency sos';
+    // Include moderate severity reports regardless of threatDetected status
+    // But exclude Emergency SOS (should only be in Immediate section)
+    return isModerateSeverity && !isEmergencySOS;
+  });
 
-  const lowSeverityReports = recentSubmissions.filter(submission => 
-    typeof submission.severity === 'string' && 
-    submission.severity.toLowerCase() === 'low' &&
-    !submission.threatDetected && // Exclude AI-detected threats
-    !submission.aiEscalated // Exclude AI-escalated reports
-  );
+  const lowSeverityReports = recentSubmissions.filter(submission => {
+    const isLowSeverity = typeof submission.severity === 'string' && 
+                         submission.severity.toLowerCase() === 'low';
+    const isEmergencySOS = typeof submission.type === 'string' && 
+                          submission.type.toLowerCase() === 'emergency sos';
+    // Include low severity reports regardless of threatDetected status
+    // But exclude Emergency SOS (should only be in Immediate section)
+    return isLowSeverity && !isEmergencySOS;
+  });
 
   // Debug logging for severity filtering
   console.log('Severity filtering results:', {
@@ -355,7 +363,18 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               status: report.status || 'pending',
               severity: report.severity || 'moderate', // Default to moderate if no severity specified
               reportId: report.reportId || key,
-              reporterUid: report.reporterUid || report.userId || report.uid // Include reporter UID for calling
+              reporterUid: report.reporterUid || report.userId || report.uid, // Include reporter UID for calling
+              threatDetected: report.threatDetected || false,
+              aiEscalated: report.aiEscalated || false,
+              escalatedAt: report.escalatedAt || null,
+              escalationDetails: report.escalationDetails || null,
+              // ML reclassification metadata
+              mlReclassified: report.mlReclassified || false,
+              mlReclassifiedAt: report.mlReclassifiedAt || null,
+              originalSeverity: report.originalSeverity || null,
+              predictedSeverity: report.predictedSeverity || null,
+              threatAnalysis: report.threatAnalysis || null,
+              mlAnalyzed: report.mlAnalyzed || false
             };
           });
           
@@ -393,10 +412,24 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
         // Get current report IDs
         const currentReportIds = new Set(reportsArray.map(report => report.id));
         
-        // Find new reports by comparing IDs
-        const newReportIds = new Set([...currentReportIds].filter(id => !lastReportIds.has(id)));
+        // Use ref for synchronous comparison (state updates are async)
+        const previousReportIds = lastReportIdsRef.current;
         
-        if (newReportIds.size > 0 && lastReportIds.size > 0) {
+        // Find new reports by comparing IDs (use ref, not state)
+        const newReportIds = new Set([...currentReportIds].filter(id => !previousReportIds.has(id)));
+        
+        // Debug: Log detection status
+        if (newReportIds.size > 0) {
+          console.log('🔍 NEW REPORT DETECTION:', {
+            newReportIds: Array.from(newReportIds),
+            previousCount: previousReportIds.size,
+            currentCount: currentReportIds.size,
+            willAnalyze: newReportIds.size > 0 && previousReportIds.size > 0
+          });
+        }
+        
+        // Handle new reports notification and alarm
+        if (newReportIds.size > 0 && previousReportIds.size > 0) {
           console.log('NEW REPORTS DETECTED:', newReportIds.size, 'new reports');
           
           // Get the most recent new report
@@ -465,9 +498,12 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               setNewReportNotification(null);
             }, 8000);
           }
-        } else if (lastReportIds.size === 0 && reportsArray.length > 0) {
+        } else if (previousReportIds.size === 0 && reportsArray.length > 0) {
           console.log('Initial load - setting report IDs');
         }
+        
+        // Update ref synchronously BEFORE state update (critical for detection)
+        lastReportIdsRef.current = new Set(currentReportIds);
         
         setLastReportCount(reportsArray.length);
         setLastReportIds(currentReportIds);
@@ -475,8 +511,28 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
         setError(null); // Clear any previous errors
         console.log('Reports updated in real-time:', reportsArray.length, 'reports');
         
-        // Run threat analysis on new reports
-        analyzeReportsForThreats(reportsArray);
+        // Run ML threat analysis ONLY on NEW reports (not on old data or continuously)
+        // Only analyze when a NEW report is detected (has ID that wasn't in previous snapshot)
+        if (newReportIds.size > 0 && previousReportIds.size > 0) {
+          // NEW report detected - analyze only the new report(s)
+          const newReports = reportsArray.filter(report => newReportIds.has(report.id));
+          console.log(`🚨 ML Threat Detection: New report detected! Analyzing ${newReports.length} new report(s)...`);
+          console.log(`   New report IDs:`, Array.from(newReportIds));
+          console.log(`   New reports:`, newReports.map(r => ({ id: r.id, description: r.description?.substring(0, 50), severity: r.severity })));
+          
+          // Analyze only new reports using ML model
+          analyzeReportsForThreats(newReports);
+        } else {
+          // No new reports detected - model in standby mode
+          // On initial load (previousReportIds.size === 0), don't analyze existing reports
+          // Only log standby status once per session to reduce console noise
+          if (previousReportIds.size === 0 && reportsArray.length > 0) {
+            console.log(`✅ ML Threat Detection: Ready and waiting for new reports (${reportsArray.length} existing reports loaded, NOT analyzing old data)`);
+          } else if (newReportIds.size === 0 && previousReportIds.size > 0) {
+            // Subsequent updates with no new reports - silent standby
+            // Don't log to avoid console noise
+          }
+        }
       } catch (err) {
         console.error('Error processing real-time data:', err);
         setError(`Failed to process data: ${err.message}`);
@@ -1186,58 +1242,141 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     }
   };
 
-  // Threat Analysis Function
+  // Threat Analysis Function - Only runs on NEW incoming reports (standby when no new reports)
+  // Reclassifies reports based on ML model predictions and moves them to appropriate categories
   const analyzeReportsForThreats = async (reports) => {
-    if (!reports || reports.length === 0) return;
+    if (!reports || reports.length === 0) {
+      console.warn('⚠️ ML Threat Detection: No reports provided for analysis');
+      return;
+    }
     
     setIsAnalyzingThreats(true);
     try {
-      console.log('Starting threat analysis for', reports.length, 'reports...');
+      console.log(`🚨 ML Threat Detection: Starting analysis for ${reports.length} report(s)...`);
+      console.log(`   Report details:`, reports.map(r => ({ 
+        id: r.id, 
+        description: r.description?.substring(0, 80), 
+        currentSeverity: r.severity 
+      })));
       
-      // Analyze reports for threats
+      // Check ML server availability first
+      const serverAvailable = await threatDetectionService.checkServerHealth();
+      if (!serverAvailable) {
+        console.error('❌ ML Threat Detection: ML server is not available!');
+        console.error('   Please ensure the ML server is running: python threat_model_server.py');
+        console.error('   Reports will not be reclassified until ML server is running.');
+        return;
+      }
+      
+      console.log('✅ ML server is available, sending reports for analysis...');
+      
+      // Analyze only new reports using ML model
       const analysisResults = await threatDetectionService.analyzeReports(reports);
       setThreatAnalysisResults(analysisResults);
       
-      // Get reports that should be escalated
+      // Get reports that should be escalated (for threat alerts)
       const escalated = threatDetectionService.getEscalatedReports(analysisResults);
       setEscalatedReports(escalated);
       
-      // Update report severities in Firebase for escalated reports
-      for (const escalatedReport of escalated) {
-        const report = reports.find(r => r.id === escalatedReport.reportId);
-        if (report && escalatedReport.threatAnalysis.isThreat && escalatedReport.threatAnalysis.confidence > 0.3) {
+      const db = getDatabase(app);
+      let reclassifiedCount = 0;
+      
+      // Reclassify ALL reports based on ML predictions
+      for (const analysisResult of analysisResults) {
+        const report = reports.find(r => r.id === analysisResult.reportId);
+        if (!report) continue;
+        
+        const predictedSeverity = analysisResult.threatAnalysis.severity;
+        const originalSeverity = (report.severity || 'moderate').toLowerCase();
+        const normalizedPredictedSeverity = predictedSeverity.toLowerCase();
+        
+        // Reclassify if ML prediction differs from current severity
+        // Only processes new reports (existing reports remain untouched)
+        if (normalizedPredictedSeverity !== originalSeverity) {
           try {
-            const db = getDatabase(app);
             const reportRef = ref(db, `civilian/civilian crime reports/${report.id}`);
             
-            // Force escalation to immediate severity regardless of original severity
-            await update(reportRef, {
-              severity: 'immediate',
-              threatDetected: true,
-              threatAnalysis: escalatedReport.threatAnalysis,
-              escalatedAt: new Date().toISOString(),
-              escalatedReason: 'AI threat detection - bypassed user severity',
-              aiEscalated: true,
-              escalationDetails: {
-                threatKeywords: escalatedReport.threatAnalysis.threats || [],
-                confidence: escalatedReport.threatAnalysis.confidence,
-                reason: escalatedReport.threatAnalysis.reason
+            // Update report with ML-predicted severity
+            const updateData = {
+              severity: normalizedPredictedSeverity, // Store as lowercase for consistency
+              mlReclassified: true,
+              mlReclassifiedAt: new Date().toISOString(),
+              originalSeverity: originalSeverity,
+              predictedSeverity: predictedSeverity,
+              threatAnalysis: {
+                ...analysisResult.threatAnalysis,
+                reclassificationReason: `ML model reclassified from ${originalSeverity} to ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`
               }
-            });
+            };
             
-            console.log(`FORCED ESCALATION: Report ${report.id} from ${report.severity} to immediate severity due to threat detection`);
-            console.log(`Threat details:`, escalatedReport.threatAnalysis);
+            // If it's a threat, also mark it as such
+            if (analysisResult.threatAnalysis.isThreat) {
+              updateData.threatDetected = true;
+              updateData.aiEscalated = true;
+              if (predictedSeverity === 'Immediate' || predictedSeverity === 'High') {
+                updateData.escalatedAt = new Date().toISOString();
+                updateData.escalationDetails = {
+                  threatKeywords: analysisResult.threatAnalysis.threats || [],
+                  confidence: analysisResult.threatAnalysis.confidence,
+                  reason: analysisResult.threatAnalysis.reason,
+                  mlClassification: predictedSeverity
+                };
+              }
+            }
+            
+            await update(reportRef, updateData);
+            reclassifiedCount++;
+            
+            console.log(`📊 ML Reclassification: Report ${report.id} - ${originalSeverity} → ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`);
             
           } catch (error) {
-            console.error(`Failed to escalate report ${report.id}:`, error);
+            console.error(`Failed to reclassify report ${report.id}:`, error);
+          }
+        } else {
+          // Severity matches, but still update threat analysis metadata
+          try {
+            const reportRef = ref(db, `civilian/civilian crime reports/${report.id}`);
+            const updateData = {
+              threatAnalysis: analysisResult.threatAnalysis,
+              mlAnalyzed: true,
+              mlAnalyzedAt: new Date().toISOString()
+            };
+            
+            if (analysisResult.threatAnalysis.isThreat) {
+              updateData.threatDetected = true;
+              if (predictedSeverity === 'Immediate' || predictedSeverity === 'High') {
+                updateData.aiEscalated = true;
+                updateData.escalatedAt = new Date().toISOString();
+              }
+            }
+            
+            await update(reportRef, updateData);
+            console.log(`✅ ML Confirmation: Report ${report.id} - Severity ${predictedSeverity} confirmed (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`);
+            
+          } catch (error) {
+            console.error(`Failed to update threat analysis for report ${report.id}:`, error);
           }
         }
       }
       
-      console.log('Threat analysis completed. Escalated', escalated.length, 'reports');
+      console.log(`✅ ML Threat Detection completed: ${reclassifiedCount} report(s) reclassified, ${escalated.length} threat(s) detected`);
+      
+      if (reclassifiedCount === 0 && reports.length > 0) {
+        console.warn('⚠️ Warning: No reports were reclassified. This could mean:');
+        console.warn('   - ML predictions matched current severity');
+        console.warn('   - Or there was an error during reclassification');
+        console.warn('   Check the console above for any errors.');
+      }
       
     } catch (error) {
-      console.error('Error in threat analysis:', error);
+      console.error('❌ Error in threat analysis:', error);
+      console.error('   Error details:', {
+        message: error.message,
+        stack: error.stack,
+        reportsCount: reports.length,
+        reportIds: reports.map(r => r.id)
+      });
+      console.error('   This error prevented ML reclassification. Please check ML server status.');
     } finally {
       setIsAnalyzingThreats(false);
     }
@@ -1456,16 +1595,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
                         <td className="table-cell table-cell-type">
                           <div className="type-container">
                             {submission.type}
-                            {submission.threatDetected && (
-                              <span className="threat-indicator" title={`AI Threat Detected - Escalated from ${submission.originalSeverity || 'original'} severity`}>
-                                WARNING
-                              </span>
-                            )}
-                            {submission.aiEscalated && (
-                              <span className="ai-escalated-badge" title="AI Escalated Report">
-                                AI
-                              </span>
-                            )}
                           </div>
                         </td>
                         <td className="table-cell table-cell-description">{truncateDescription(submission.description)}</td>

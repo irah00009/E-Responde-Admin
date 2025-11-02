@@ -84,7 +84,7 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
 
       return (
         reportBarangay === targetBarangay &&
-        reportCrime === targetCrime &&
+        crimeMatches &&
         report.dateTime
       );
     });

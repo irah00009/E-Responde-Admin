@@ -1,0 +1,43 @@
+services:
+  # Python ML Server (Web Service) - Deploy this first
+  - type: web
+    name: e-responde-admin-ml-server
+    env: python
+    buildCommand: cd ml-threat-detection && pip install -r requirements.txt
+    startCommand: cd ml-threat-detection && python threat_model_server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+    healthCheckPath: /health
+
+  # React Frontend (Web Service - Node.js)
+  - type: web
+    name: e-responde-admin
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18.18.0
+      - key: VITE_FIREBASE_API_KEY
+        value: AIzaSyCT7NToZVd_Su3fbLqegTX6vhO-QLWMfug
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        value: e-responde.firebaseapp.com
+      - key: VITE_FIREBASE_DATABASE_URL
+        value: https://e-responde-default-rtdb.asia-southeast1.firebasedatabase.app
+      - key: VITE_FIREBASE_PROJECT_ID
+        value: e-responde
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        value: e-responde.firebasestorage.app
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        value: 343953743058
+      - key: VITE_FIREBASE_APP_ID
+        value: 1:343953743058:web:489c46e1439e7e9fe7e10b
+      - key: VITE_FIREBASE_MEASUREMENT_ID
+        value: G-MDLC7VPELW
+      # IMPORTANT: After deploying ML server, set VITE_ML_SERVER_URL manually in Render dashboard:
+      # Go to e-responde-admin service > Environment > Add env var
+      # Key: VITE_ML_SERVER_URL
+      # Value: https://e-responde-admin-ml-server.onrender.com (use your actual ML server URL)
+      - key: VITE_ML_SERVER_URL
+        value: https://e-responde-admin-ml-server.onrender.com
