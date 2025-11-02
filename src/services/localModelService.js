@@ -10,7 +10,7 @@ const AVAILABLE_CRIME_TYPES = [
   'Drug Related',
   'Fraud',
   'Harassment',
-  'Others',
+  'Other',
   'Theft',
   'Vandalism',
   'Vehicle Theft'
@@ -30,10 +30,16 @@ const getModelFileName = (crimeType, location) => {
 
 // Check if model exists
 export const modelExists = (crimeType, location) => {
-  const modelFile = getModelFileName(crimeType, location)
+  // Normalize "Other" and "Others" to "Other"
+  let normalizedCrimeType = crimeType
+  if (crimeType === 'Others') {
+    normalizedCrimeType = 'Other'
+  }
+  
+  const modelFile = getModelFileName(normalizedCrimeType, location)
   // In a real implementation, you would check if the file exists
   // For now, we'll assume all combinations exist based on the files we saw
-  return AVAILABLE_CRIME_TYPES.includes(crimeType) && AVAILABLE_LOCATIONS.includes(location)
+  return AVAILABLE_CRIME_TYPES.includes(normalizedCrimeType) && AVAILABLE_LOCATIONS.includes(location)
 }
 
 // Get model name for display
@@ -64,15 +70,39 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
     // Filter reports based on selected barangay + crimeType
     const filteredReports = allReports.filter((report) => {
       const reportBarangay = (report.barangay || '').trim().toLowerCase();
-      const reportCrime = (report.crimeType || '').trim().toLowerCase();
+      let reportCrime = (report.crimeType || '').trim().toLowerCase();
       const targetBarangay = barangay.trim().toLowerCase();
-      const targetCrime = crimeType.trim().toLowerCase();
+      let targetCrime = crimeType.trim().toLowerCase();
 
-      return (
+      // Normalize "Other" and "Others" to match both variations
+      if (targetCrime === 'others') {
+        targetCrime = 'other';
+      }
+      if (reportCrime === 'others') {
+        reportCrime = 'other';
+      }
+
+      const matches = (
         reportBarangay === targetBarangay &&
         reportCrime === targetCrime &&
         report.dateTime
       );
+
+      // Debug logging for "Other" crime type
+      if (crimeType.toLowerCase() === 'other' || crimeType.toLowerCase() === 'others') {
+        if (reportCrime === 'other' || reportCrime === 'others') {
+          console.log(`🔍 Filtering report for "Other":`, {
+            reportId: report.id || report.reportId,
+            reportCrime: report.crimeType,
+            normalizedReportCrime: reportCrime,
+            targetCrime: crimeType,
+            normalizedTargetCrime: targetCrime,
+            matches
+          });
+        }
+      }
+
+      return matches;
     });
 
     if (filteredReports.length === 0) {
@@ -267,18 +297,24 @@ export const generateLocalForecast = (historicalData, months = 6) => {
 // Main function to perform local forecasting
 export const performLocalForecasting = async (crimeType, location, months = 6) => {
   try {
-    console.log(`🔮 Performing local forecasting for ${crimeType} in ${location}`)
-    
-    // Check if model exists
-    if (!modelExists(crimeType, location)) {
-      throw new Error(`No model available for ${crimeType} in ${location}`)
+    // Normalize crimeType before using it
+    let normalizedCrimeType = crimeType
+    if (crimeType === 'Other' || crimeType === 'Others') {
+      normalizedCrimeType = 'Other'
     }
     
-    // Fetch historical data
-    const historicalData = await fetchHistoricalData(crimeType, location)
+    console.log(`🔮 Performing local forecasting for ${normalizedCrimeType} in ${location}`)
+    
+    // Check if model exists (using normalized crimeType)
+    if (!modelExists(normalizedCrimeType, location)) {
+      throw new Error(`No model available for ${normalizedCrimeType} in ${location}`)
+    }
+    
+    // Fetch historical data (fetchHistoricalData will normalize "Others" to "Other" when filtering)
+    const historicalData = await fetchHistoricalData(normalizedCrimeType, location)
     
     if (historicalData.length === 0) {
-      throw new Error(`No historical data found for ${crimeType} in ${location}`)
+      throw new Error(`No historical data found for ${normalizedCrimeType} in ${location}`)
     }
     
     console.log(`📊 Found ${historicalData.length} historical data points`)
@@ -297,7 +333,7 @@ export const performLocalForecasting = async (crimeType, location, months = 6) =
       confidenceUpper: forecastResult.confidenceUpper,
       confidenceLower: forecastResult.confidenceLower,
       statistics: forecastResult.statistics,
-      model: getModelName(crimeType, location)
+      model: getModelName(normalizedCrimeType, location)
     }
   } catch (error) {
     console.error('Error in local forecasting:', error)
@@ -339,7 +375,23 @@ export const fetchAvailableFilters = async () => {
 
   const data = Object.values(snapshot.val());
   const barangays = [...new Set(data.map(r => r.barangay))].filter(Boolean);
-  const crimeTypes = [...new Set(data.map(r => r.crimeType))].filter(Boolean);
+  
+  // Get all raw crime types first for debugging
+  const rawCrimeTypes = [...new Set(data.map(r => r.crimeType).filter(Boolean))];
+  console.log('🔍 Raw crime types from Firebase:', rawCrimeTypes);
+  
+  const crimeTypes = [...new Set(
+    data
+      .map(r => r.crimeType)
+      .filter(Boolean)
+      .map(t => {
+        // Normalize "Others" and "Emergency SOS" to "Other"
+        if (t === 'Others' || t === 'Emergency SOS') return 'Other'
+        return t
+      })
+  )];
+  
+  console.log('✅ Normalized crime types for filters:', crimeTypes);
 
   return { barangays, crimeTypes };
 };
