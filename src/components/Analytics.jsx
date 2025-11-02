@@ -292,7 +292,7 @@ function Analytics() {
           return true
         }
         
-        if (selectedType === 'drug-related' && 
+        if ((selectedType === 'drug-related' || selectedType === 'drug related') && 
             reportCrimeType.toLowerCase().includes('drug')) {
           return true
         }
@@ -300,6 +300,13 @@ function Analytics() {
         if (selectedType === 'domestic violence' && 
             (reportCrimeType.toLowerCase().includes('domestic') || 
              reportCrimeType.toLowerCase().includes('violence'))) {
+          return true
+        }
+        
+        // Handle "Other" and "Others" variations
+        if ((selectedType === 'other' || selectedType === 'others') && 
+            (reportCrimeType.toLowerCase() === 'other' || 
+             reportCrimeType.toLowerCase() === 'others')) {
           return true
         }
         
@@ -456,7 +463,12 @@ function Analytics() {
     const crimeTypes = new Set()
     reportsArray.forEach(report => {
       if (report.crimeType && report.crimeType.trim()) {
-        crimeTypes.add(report.crimeType.trim())
+        let crimeType = report.crimeType.trim()
+        // Normalize "Others" to "Other"
+        if (crimeType === 'Others') {
+          crimeType = 'Other'
+        }
+        crimeTypes.add(crimeType)
       }
     })
     return Array.from(crimeTypes).sort()
