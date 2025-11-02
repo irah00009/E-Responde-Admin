@@ -38,7 +38,11 @@ const AnalyticsDashboard = () => {
       const { barangays, crimeTypes } = await fetchAvailableFilters()
       
       const mappedCrimeTypes = Array.from(new Set(
-        (crimeTypes || []).map(t => t === 'Emergency SOS' ? 'Others' : t)
+        (crimeTypes || []).map(t => {
+          if (t === 'Emergency SOS') return 'Other'
+          if (t === 'Others') return 'Other'
+          return t
+        })
       ))
       const targetBarangays = barangays.filter(
         b => b === 'Barangay 41' || b === 'Barangay 43'
@@ -114,7 +118,10 @@ const AnalyticsDashboard = () => {
         reportsArray
           .map(r => r.crimeType || r.type || r.crime_type)
           .filter(Boolean)
-          .map(t => t === 'Emergency SOS' ? 'Others' : String(t))
+          .map(t => {
+            if (t === 'Emergency SOS' || t === 'Others') return 'Other'
+            return String(t)
+          })
       )]
       const barangays = [...new Set(
         reportsArray.map(r => r.barangay).filter(Boolean)
@@ -158,7 +165,10 @@ const AnalyticsDashboard = () => {
         reportsArray
           .map(r => r.crimeType || r.type || r.crime_type)
           .filter(Boolean)
-          .map(t => t === 'Emergency SOS' ? 'Others' : String(t))
+          .map(t => {
+            if (t === 'Emergency SOS' || t === 'Others') return 'Other'
+            return String(t)
+          })
       )]
       const barangays = [...new Set(
         reportsArray.map(r => r.barangay).filter(Boolean)
