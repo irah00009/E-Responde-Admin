@@ -84,7 +84,7 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
 
       const matches = (
         reportBarangay === targetBarangay &&
-        reportCrime === targetCrime &&
+        crimeMatches &&
         report.dateTime
       );
 

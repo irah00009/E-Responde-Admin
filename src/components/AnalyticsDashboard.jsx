@@ -47,6 +47,10 @@ const AnalyticsDashboard = () => {
       const targetBarangays = barangays.filter(
         b => b === 'Barangay 41' || b === 'Barangay 43'
       )
+      
+      console.log('Available crime types:', mappedCrimeTypes)
+      console.log('Available barangays:', targetBarangays)
+      
       setAvailableCrimeTypes(mappedCrimeTypes)
       setAvailableLocations(targetBarangays.length > 0 ? targetBarangays : ['Barangay 41', 'Barangay 43'])
     } catch (err) {
