@@ -1423,6 +1423,20 @@
   opacity: 0.6;
 }
 
+.action-btn-delete {
+  background: #ef4444;
+  color: white;
+  border-color: #dc2626;
+}
+
+.action-btn-delete:hover {
+  background: #dc2626;
+  color: white;
+  border-color: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+}
+
 /* Priority Badge Updates */
 .priority-badge {
   padding: 0.5rem 1rem;
