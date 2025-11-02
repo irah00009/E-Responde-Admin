@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { getDatabase, ref, onValue, off, update, get, push, set } from 'firebase/database'
+import { getDatabase, ref, onValue, off, update, get, push, set, remove } from 'firebase/database'
 import { app, iceServers } from '../firebase'
 import { useAuth } from '../providers/AuthProvider'
 import StatusTag from './StatusTag'
@@ -663,6 +663,36 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const handleUpdateStatus = (report) => {
     setSelectedReport(report);
     setShowUpdateModal(true);
+  };
+
+  const handleDelete = async (report) => {
+    if (!window.confirm(`Are you sure you want to delete this ${report.type} report? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const db = getDatabase(app);
+      
+      // Remove from civilian/civilian crime reports
+      const reportRef = ref(db, `civilian/civilian crime reports/${report.id}`);
+      await remove(reportRef);
+      
+      // Also remove from civilian account if it exists
+      if (report.reporterUid) {
+        const accountReportRef = ref(db, `civilian/civilian account/${report.reporterUid}/crime reports/${report.reportId || report.id}`);
+        try {
+          await remove(accountReportRef);
+        } catch (err) {
+          // Ignore if report doesn't exist in account
+          console.log('Report not found in account, continuing...');
+        }
+      }
+      
+      console.log('Report deleted successfully');
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      alert('Failed to delete report. Please try again.');
+    }
   };
 
   // Audio Functions
@@ -2063,6 +2093,18 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
                               <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                             </svg>
                             {callLoading ? 'Calling...' : 'Call'}
+                          </button>
+                          <button 
+                            className="action-btn action-btn-delete"
+                            onClick={() => handleDelete(submission)}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="3,6 5,6 21,6"></polyline>
+                              <path d="M19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path>
+                              <line x1="10" y1="11" x2="10" y2="17"></line>
+                              <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                            Delete
                           </button>
                         </div>
                       </td>

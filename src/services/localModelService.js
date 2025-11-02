@@ -70,7 +70,7 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
     // Filter reports based on selected barangay + crimeType
     const filteredReports = allReports.filter((report) => {
       const reportBarangay = (report.barangay || '').trim().toLowerCase();
-      let reportCrime = (report.crimeType || '').trim().toLowerCase();
+      let reportCrime = (report.crimeType || report.type || report.crime_type || '').trim().toLowerCase();
       const targetBarangay = barangay.trim().toLowerCase();
       let targetCrime = crimeType.trim().toLowerCase();
 
@@ -82,10 +82,13 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
         reportCrime = 'other';
       }
 
+      // Check if crime type matches
+      const crimeMatches = reportCrime === targetCrime;
+
       return (
         reportBarangay === targetBarangay &&
         crimeMatches &&
-        report.dateTime
+        (report.dateTime || report.createdAt || report.timestamp)
       );
     });
 
@@ -97,8 +100,16 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
     // Group by month (for time-series)
     const monthlyData = {};
     filteredReports.forEach((report) => {
-      const date = new Date(report.dateTime);
-      if (isNaN(date)) return;
+      // Try multiple date fields
+      const dateStr = report.dateTime || report.createdAt || report.timestamp || report.date;
+      if (!dateStr) return;
+      
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date for report:', report.id, dateStr);
+        return;
+      }
+      
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
     });
@@ -352,16 +363,44 @@ export const getAvailableLocations = () => {
 
 // Fetch available filters from Firebase
 export const fetchAvailableFilters = async () => {
-  const db = getDatabase(app);
-  const refReports = ref(db, 'civilian/civilian crime reports');
-  const snapshot = await get(refReports);
-  if (!snapshot.exists()) return { barangays: [], crimeTypes: [] };
+  try {
+    const db = getDatabase(app);
+    const refReports = ref(db, 'civilian/civilian crime reports');
+    const snapshot = await get(refReports);
+    if (!snapshot.exists()) {
+      console.warn('⚠️ No crime reports found for filters');
+      return { barangays: [], crimeTypes: [] };
+    }
 
-  const data = Object.values(snapshot.val());
-  const barangays = [...new Set(data.map(r => r.barangay))].filter(Boolean);
-  const crimeTypes = [...new Set(data.map(r => r.crimeType))].filter(Boolean);
+    const data = Object.values(snapshot.val());
+    
+    // Extract barangays (locations)
+    const barangays = [...new Set(
+      data.map(r => r.barangay).filter(Boolean)
+    )];
+    
+    // Extract crime types with normalization
+    const crimeTypesSet = new Set();
+    data.forEach(r => {
+      const crimeType = r.crimeType || r.type || r.crime_type;
+      if (crimeType && crimeType.trim()) {
+        let normalized = crimeType.trim();
+        // Normalize "Others" to "Other"
+        if (normalized === 'Others' || normalized === 'Emergency SOS') {
+          normalized = 'Other';
+        }
+        crimeTypesSet.add(normalized);
+      }
+    });
+    const crimeTypes = Array.from(crimeTypesSet).sort();
 
-  return { barangays, crimeTypes };
+    console.log(`✅ Found ${barangays.length} barangays and ${crimeTypes.length} crime types`);
+    
+    return { barangays, crimeTypes };
+  } catch (error) {
+    console.error('❌ Error fetching available filters:', error);
+    return { barangays: [], crimeTypes: [] };
+  }
 };
 
 // Get all available model combinations
