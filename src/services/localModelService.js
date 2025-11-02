@@ -82,27 +82,11 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
         reportCrime = 'other';
       }
 
-      const matches = (
+      return (
         reportBarangay === targetBarangay &&
         crimeMatches &&
         report.dateTime
       );
-
-      // Debug logging for "Other" crime type
-      if (crimeType.toLowerCase() === 'other' || crimeType.toLowerCase() === 'others') {
-        if (reportCrime === 'other' || reportCrime === 'others') {
-          console.log(`🔍 Filtering report for "Other":`, {
-            reportId: report.id || report.reportId,
-            reportCrime: report.crimeType,
-            normalizedReportCrime: reportCrime,
-            targetCrime: crimeType,
-            normalizedTargetCrime: targetCrime,
-            matches
-          });
-        }
-      }
-
-      return matches;
     });
 
     if (filteredReports.length === 0) {
@@ -375,23 +359,7 @@ export const fetchAvailableFilters = async () => {
 
   const data = Object.values(snapshot.val());
   const barangays = [...new Set(data.map(r => r.barangay))].filter(Boolean);
-  
-  // Get all raw crime types first for debugging
-  const rawCrimeTypes = [...new Set(data.map(r => r.crimeType).filter(Boolean))];
-  console.log('🔍 Raw crime types from Firebase:', rawCrimeTypes);
-  
-  const crimeTypes = [...new Set(
-    data
-      .map(r => r.crimeType)
-      .filter(Boolean)
-      .map(t => {
-        // Normalize "Others" and "Emergency SOS" to "Other"
-        if (t === 'Others' || t === 'Emergency SOS') return 'Other'
-        return t
-      })
-  )];
-  
-  console.log('✅ Normalized crime types for filters:', crimeTypes);
+  const crimeTypes = [...new Set(data.map(r => r.crimeType))].filter(Boolean);
 
   return { barangays, crimeTypes };
 };
