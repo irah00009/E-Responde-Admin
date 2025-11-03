@@ -172,12 +172,12 @@ function Login({ onLoginSuccess }) {
       
       console.log('User logged in:', user.uid)
 
-      // Check all possible account types to determine user role
+      // Check for admin account only - admin dashboard is restricted to admins
       let accountType = null
       let accountData = null
       
       try {
-        // Check for admin account first
+        // Check for admin account
         const adminSnap = await get(ref(realtimeDb, 'admin_dashboard_account'))
         if (adminSnap.exists()) {
           const adminData = adminSnap.val()
@@ -188,30 +188,13 @@ function Login({ onLoginSuccess }) {
           }
         }
         
-        // If not admin, check for civilian account
+        // If not admin, deny access - only admins can login to admin dashboard
         if (!accountType) {
-          const civilianSnap = await get(ref(realtimeDb, `civilian/civilian account/${user.uid}`))
-          if (civilianSnap.exists()) {
-            accountType = 'civilian'
-            accountData = civilianSnap.val()
-            console.log('Civilian account verified for user', user.uid)
-          }
-        }
-        
-        // If not civilian, check for police account
-        if (!accountType) {
-          const policeSnap = await get(ref(realtimeDb, `police/police account/${user.uid}`))
-          if (policeSnap.exists()) {
-            accountType = 'police'
-            accountData = policeSnap.val()
-            console.log('Police account verified for user', user.uid)
-          }
-        }
-        
-        // If no account found in any category
-        if (!accountType) {
-          setError('Account not found. Please ensure you have a valid account (Admin, Civilian, or Police).')
+          setError('Access denied. Only admin accounts can access the admin dashboard.')
           setLoading(false)
+          // Sign out the user from Firebase Auth since they're not authorized
+          const auth = getAuth()
+          await auth.signOut()
           return
         }
         

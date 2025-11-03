@@ -40,7 +40,7 @@ const router = createBrowserRouter([
   {
     path: '/',
         element: (
-          <RequireAuth roles={['SuperAdmin','Dispatcher','Analyst','admin','civilian','police']}>
+          <RequireAuth roles={['SuperAdmin','Dispatcher','Analyst','admin']}>
             <AppLayout />
           </RequireAuth>
         ),
