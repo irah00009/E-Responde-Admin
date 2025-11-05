@@ -389,30 +389,35 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
         // Filter police with location data and calculate distances
         const policeWithDistance = policeArray
           .filter(police => {
-            const hasLocation = police.currentLocation && police.currentLocation.latitude && police.currentLocation.longitude
+            // Check multiple location formats: currentLocation, direct latitude/longitude, or location object
+            const lat = police.currentLocation?.latitude || police.latitude || police.location?.latitude
+            const lon = police.currentLocation?.longitude || police.longitude || police.location?.longitude
+            const hasLocation = lat && lon && lat !== 0 && lon !== 0
+            
             console.log(`Police ${police.firstName} ${police.lastName}:`, {
               hasCurrentLocation: !!police.currentLocation,
-              latitude: police.currentLocation?.latitude,
-              longitude: police.currentLocation?.longitude,
-              hasLocation
+              currentLocationLat: police.currentLocation?.latitude,
+              currentLocationLon: police.currentLocation?.longitude,
+              directLat: police.latitude,
+              directLon: police.longitude,
+              locationLat: police.location?.latitude,
+              locationLon: police.location?.longitude,
+              finalLat: lat,
+              finalLon: lon,
+              hasLocation,
+              status: police.status
             })
             return hasLocation
           })
           .map(police => {
-            const distance = calculateDistance(
-              crimeLat, 
-              crimeLon, 
-              parseFloat(police.currentLocation.latitude), 
-              parseFloat(police.currentLocation.longitude)
-            );
+            // Get location from multiple possible sources
+            const lat = parseFloat(police.currentLocation?.latitude || police.latitude || police.location?.latitude)
+            const lon = parseFloat(police.currentLocation?.longitude || police.longitude || police.location?.longitude)
+            
+            const distance = calculateDistance(crimeLat, crimeLon, lat, lon);
             
             const eta = calculateETA(distance);
-            const route = generateRouteSuggestion(
-              parseFloat(police.currentLocation.latitude),
-              parseFloat(police.currentLocation.longitude),
-              crimeLat,
-              crimeLon
-            );
+            const route = generateRouteSuggestion(lat, lon, crimeLat, crimeLon);
             
             return {
               ...police,
@@ -423,13 +428,64 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
           })
           .sort((a, b) => a.distance - b.distance) // Sort by distance
 
-        console.log('Police with distance:', policeWithDistance)
+        console.log('Police with distance (sorted):', policeWithDistance.map(p => ({
+          name: `${p.firstName} ${p.lastName}`,
+          distance: p.distance,
+          status: p.status
+        })))
 
         // Filter out already dispatched officers and get top 3 nearest available police officers
-        const availablePolice = policeWithDistance.filter(police => 
-          police.status !== 'Dispatched' && police.status !== 'Busy'
-        )
-        const nearestPolice = availablePolice.slice(0, 3)
+        // Only include: Available, Active, Standby (can be redispatched)
+        // Explicitly exclude: Dispatched, Busy, Inactive, null, undefined, and any other status
+        // Use case-insensitive comparison to handle different status formats
+        const availablePolice = policeWithDistance.filter(police => {
+          const status = (police.status || '').toLowerCase().trim()
+          // Only include officers with valid active statuses
+          const validStatuses = ['available', 'active', 'standby']
+          return validStatuses.includes(status)
+        })
+        
+        console.log('Available police (after status filter):', availablePolice.map(p => ({
+          name: `${p.firstName} ${p.lastName}`,
+          distance: p.distance,
+          status: p.status
+        })))
+        
+        // Sort primarily by distance (nearest first), then by status priority as tie-breaker
+        // This ensures the closest officers are shown first
+        const sortedPolice = availablePolice.sort((a, b) => {
+          // First priority: distance (nearest officers first)
+          const distanceDiff = a.distance - b.distance
+          
+          // If distances are very similar (within 1km), use status as tie-breaker
+          if (Math.abs(distanceDiff) < 1.0) {
+            const statusA = (a.status || '').toLowerCase()
+            const statusB = (b.status || '').toLowerCase()
+            
+            // Priority order: Available/Active first, then Standby, then others
+            const priorityOrder = { 'available': 1, 'active': 1, 'standby': 2, '': 3 }
+            const priorityA = priorityOrder[statusA] || 3
+            const priorityB = priorityOrder[statusB] || 3
+            
+            // If same priority, maintain distance order
+            if (priorityA !== priorityB) {
+              return priorityA - priorityB
+            }
+          }
+          
+          // Primary sort: by distance (nearest first)
+          return distanceDiff
+        })
+        
+        const nearestPolice = sortedPolice.slice(0, 3)
+        
+        console.log('Final sorted police recommendations:', nearestPolice.map(p => ({
+          name: `${p.firstName} ${p.lastName}`,
+          distance: p.distance.toFixed(2),
+          status: p.status,
+          priority: (p.status || '').toLowerCase() === 'available' || (p.status || '').toLowerCase() === 'active' ? 1 : 
+                   (p.status || '').toLowerCase() === 'standby' ? 2 : 3
+        })))
         
         console.log('Available police:', nearestPolice)
         setPoliceRecommendations(nearestPolice)
