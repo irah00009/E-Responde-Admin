@@ -162,6 +162,41 @@
   font-weight: 500;
 }
 
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 2.75rem;
+  width: 100%;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  transition: color 0.2s ease;
+  z-index: 1;
+}
+
+.password-toggle-btn:hover {
+  color: #3b82f6;
+}
+
+.password-toggle-btn:focus {
+  outline: none;
+  color: #3b82f6;
+}
+
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
@@ -392,6 +427,10 @@
   background: #ffffff;
 }
 
+.police-accounts-table tbody tr {
+  vertical-align: middle;
+}
+
 .police-accounts-table th {
   background: #f8fafc;
   color: #1e293b;
@@ -402,12 +441,14 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 2px solid #e5e7eb;
+  vertical-align: middle;
 }
 
 .police-accounts-table td {
   padding: 1rem;
   border-bottom: 1px solid #e5e7eb;
   color: #374151;
+  vertical-align: middle !important;
 }
 
 .police-accounts-table tr:hover {
@@ -427,6 +468,13 @@
   gap: 0.75rem;
   font-weight: 600;
   color: #1e293b;
+  white-space: normal;
+  word-wrap: break-word;
+  line-height: 1.5;
+}
+
+.account-name > .account-avatar {
+  flex-shrink: 0;
 }
 
 .account-avatar {
@@ -448,12 +496,14 @@
   font-family: 'Courier New', monospace;
   font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 .account-rank {
   color: #f59e0b;
   font-weight: 600;
   font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .account-status {
@@ -488,6 +538,7 @@
   color: #9ca3af;
   font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 .account-id {
@@ -495,6 +546,7 @@
   font-family: 'Courier New', monospace;
   font-size: 0.75rem;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 .inactive-account {
@@ -664,7 +716,7 @@
 }
 
 .confirm-delete-btn {
-  background: var(--error);
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
@@ -676,11 +728,13 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
 }
 
 .confirm-delete-btn:hover:not(:disabled) {
-  background: var(--error);
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
   transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
 }
 
 .confirm-delete-btn:disabled {

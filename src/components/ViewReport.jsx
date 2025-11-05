@@ -373,46 +373,87 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
     try {
       const db = getDatabase(app)
       const policeRef = ref(db, 'police/police account')
-      const snapshot = await get(policeRef)
+      const policeSnapshot = await get(policeRef)
       
-      if (snapshot.exists()) {
-        const policeData = snapshot.val()
+      // Also fetch location data from police/police location
+      const policeLocationRef = ref(db, 'police/police location')
+      const locationSnapshot = await get(policeLocationRef)
+      
+      if (policeSnapshot.exists()) {
+        const policeData = policeSnapshot.val()
+        const locationData = locationSnapshot.exists() ? locationSnapshot.val() : {}
         console.log('Raw police data:', policeData)
+        console.log('Raw location data:', locationData)
         
-        const policeArray = Object.entries(policeData).map(([id, data]) => ({
-          id,
-          ...data
-        }))
+        const policeArray = Object.entries(policeData).map(([id, data]) => {
+          // Merge location data from police/police location if available
+          const locationInfo = locationData[id] || {}
+          return {
+            id,
+            ...data,
+            // Merge location data from separate location path
+            locationLat: locationInfo.latitude,
+            locationLon: locationInfo.longitude,
+            locationCurrentLocation: locationInfo.currentLocation
+          }
+        })
         
-        console.log('Police array:', policeArray)
+        console.log('Police array with merged location data:', policeArray)
 
         // Filter police with location data and calculate distances
         const policeWithDistance = policeArray
           .filter(police => {
-            // Check multiple location formats: currentLocation, direct latitude/longitude, or location object
-            const lat = police.currentLocation?.latitude || police.latitude || police.location?.latitude
-            const lon = police.currentLocation?.longitude || police.longitude || police.location?.longitude
+            // Check multiple location formats:
+            // 1. From police/police location/{id}
+            // 2. From police/police account/{id} - currentLocation, direct latitude/longitude, or location object
+            const lat = police.locationCurrentLocation?.latitude || 
+                       police.locationLat ||
+                       police.currentLocation?.latitude || 
+                       police.latitude || 
+                       police.location?.latitude
+            const lon = police.locationCurrentLocation?.longitude || 
+                       police.locationLon ||
+                       police.currentLocation?.longitude || 
+                       police.longitude || 
+                       police.location?.longitude
             const hasLocation = lat && lon && lat !== 0 && lon !== 0
             
             console.log(`Police ${police.firstName} ${police.lastName}:`, {
-              hasCurrentLocation: !!police.currentLocation,
-              currentLocationLat: police.currentLocation?.latitude,
-              currentLocationLon: police.currentLocation?.longitude,
-              directLat: police.latitude,
-              directLon: police.longitude,
-              locationLat: police.location?.latitude,
-              locationLon: police.location?.longitude,
+              fromLocationPath: {
+                lat: police.locationLat,
+                lon: police.locationLon,
+                currentLocation: police.locationCurrentLocation
+              },
+              fromAccountPath: {
+                currentLocation: police.currentLocation,
+                directLat: police.latitude,
+                directLon: police.longitude,
+                location: police.location
+              },
               finalLat: lat,
               finalLon: lon,
               hasLocation,
-              status: police.status
+              status: police.status,
+              isActive: police.isActive
             })
             return hasLocation
           })
           .map(police => {
             // Get location from multiple possible sources
-            const lat = parseFloat(police.currentLocation?.latitude || police.latitude || police.location?.latitude)
-            const lon = parseFloat(police.currentLocation?.longitude || police.longitude || police.location?.longitude)
+            const lat = parseFloat(
+              police.locationCurrentLocation?.latitude || 
+              police.locationLat ||
+              police.currentLocation?.latitude || 
+              police.latitude || 
+              police.location?.latitude
+            )
+            const lon = parseFloat(
+              police.locationCurrentLocation?.longitude || 
+              police.locationLon ||
+              police.currentLocation?.longitude || 
+              police.longitude || 
+              police.location?.longitude
+            )
             
             const distance = calculateDistance(crimeLat, crimeLon, lat, lon);
             
@@ -431,18 +472,36 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
         console.log('Police with distance (sorted):', policeWithDistance.map(p => ({
           name: `${p.firstName} ${p.lastName}`,
           distance: p.distance,
-          status: p.status
+          status: p.status,
+          isActive: p.isActive
         })))
 
         // Filter out already dispatched officers and get top 3 nearest available police officers
+        // Check both status field and isActive field
         // Only include: Available, Active, Standby (can be redispatched)
         // Explicitly exclude: Dispatched, Busy, Inactive, null, undefined, and any other status
         // Use case-insensitive comparison to handle different status formats
         const availablePolice = policeWithDistance.filter(police => {
           const status = (police.status || '').toLowerCase().trim()
-          // Only include officers with valid active statuses
+          const isActive = police.isActive !== false // Default to true if not specified
+          
+          // Include if status is valid OR if isActive is true (and no invalid status)
           const validStatuses = ['available', 'active', 'standby']
-          return validStatuses.includes(status)
+          const hasValidStatus = validStatuses.includes(status)
+          const hasInvalidStatus = status && !validStatuses.includes(status) && status !== ''
+          
+          // Include if: (has valid status) OR (isActive and no invalid status)
+          const shouldInclude = hasValidStatus || (isActive && !hasInvalidStatus)
+          
+          console.log(`Police ${police.firstName} ${police.lastName} - Status check:`, {
+            status,
+            isActive,
+            hasValidStatus,
+            hasInvalidStatus,
+            shouldInclude
+          })
+          
+          return shouldInclude
         })
         
         console.log('Available police (after status filter):', availablePolice.map(p => ({
