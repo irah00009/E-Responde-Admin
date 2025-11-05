@@ -388,13 +388,19 @@ function EnhancedDispatch() {
 
       console.log('Dispatch info created:', dispatchInfo)
 
-      // Update the crime report status to Assigned (waiting for officer confirmation)
+      // Store the original status before changing to Dispatched
+      const originalStatus = selectedReport.status || 'Pending'
+
+      // Update the crime report status to Dispatched
       try {
         console.log('Updating crime report...', selectedReport.id)
         const reportRef = ref(realtimeDb, `civilian/civilian crime reports/${selectedReport.id}`)
         await update(reportRef, {
-          status: 'Assigned',
-          dispatchInfo: dispatchInfo,
+          status: 'Dispatched',
+          dispatchInfo: {
+            ...dispatchInfo,
+            originalStatus: originalStatus
+          },
           assignmentStatus: 'Pending Confirmation'
         })
         console.log('Crime report updated successfully')
@@ -642,18 +648,23 @@ function EnhancedDispatch() {
       })
       console.log('Officer status updated successfully')
 
-      console.log('Updating report status back to Pending...')
-      // Update report status back to Pending so it can be reassigned
+      console.log('Updating report status back to original status...')
+      // Get the original status before dispatch, or default to 'Pending'
+      const originalStatus = dispatch.dispatchInfo?.originalStatus || dispatch.status || 'Pending'
+      
+      // Update report status back to original status so it can be reassigned
       const reportRef = ref(realtimeDb, `civilian/civilian crime reports/${dispatch.id}`)
       await update(reportRef, {
-        status: 'Pending',
+        status: originalStatus,
         dispatchInfo: null,
+        dispatchedTo: null,
         assignmentStatus: 'Declined',
         assignmentDeclined: {
           declinedBy: dispatch.assignedOfficer.name,
           declinedAt: new Date().toISOString(),
           reason: 'Officer declined assignment'
-        }
+        },
+        requiresMobileConfirmation: null
       })
       console.log('Report status updated successfully')
 
@@ -999,13 +1010,25 @@ function EnhancedDispatch() {
                     </p>
                   </div>
                   
-                  {report.dispatchInfo ? (
+                  {report.dispatchInfo && report.assignmentStatus !== 'Declined' ? (
                     <div className="dispatch-info">
                       <strong>Dispatched to:</strong> {report.dispatchInfo.unitName}
                       <br />
                       <strong>Dispatched at:</strong> {formatDate(report.dispatchInfo.dispatchedAt)}
                       <br />
                       <strong>Priority:</strong> {report.dispatchInfo.priority}
+                    </div>
+                  ) : report.assignmentStatus === 'Declined' ? (
+                    <div className="dispatch-info" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '0.5rem', borderRadius: '4px' }}>
+                      <strong style={{ color: '#dc2626' }}>Status:</strong> <span style={{ color: '#dc2626' }}>Assignment Declined - Available for Redispatch</span>
+                      {report.assignmentDeclined && (
+                        <>
+                          <br />
+                          <strong>Declined by:</strong> {report.assignmentDeclined.declinedBy}
+                          <br />
+                          <strong>Declined at:</strong> {report.assignmentDeclined.declinedAt ? formatDate(new Date(report.assignmentDeclined.declinedAt)) : 'N/A'}
+                        </>
+                      )}
                     </div>
                   ) : report.status?.toLowerCase() === 'dispatched' ? (
                     <div className="dispatch-info">
@@ -1140,7 +1163,7 @@ function EnhancedDispatch() {
               </div>
               
               {/* Police Officer Selection */}
-              {!selectedReport.dispatchInfo && (
+              {(!selectedReport.dispatchInfo || selectedReport.assignmentStatus === 'Declined') && (
                 <div className="officer-selection-section">
                   <h4>Assign Police Officer</h4>
                   <div className="officer-dropdown-container">
@@ -1175,7 +1198,7 @@ function EnhancedDispatch() {
               <button className="cancel-btn" onClick={handleCloseReportModal}>
                 Close
               </button>
-              {!selectedReport.dispatchInfo && selectedOfficer && (
+              {(!selectedReport.dispatchInfo || selectedReport.assignmentStatus === 'Declined') && selectedOfficer && (
                 <button 
                   className="assign-btn" 
                   onClick={handleAssignOfficer}

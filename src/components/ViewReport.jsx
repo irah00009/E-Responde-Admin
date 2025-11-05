@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { getDatabase, ref, get, set, push } from 'firebase/database'
+import { getDatabase, ref, get, set, push, update } from 'firebase/database'
 import { ref as storageRef, getDownloadURL } from 'firebase/storage'
 import { app, storage } from '../firebase'
 import StatusTag from './StatusTag'
@@ -120,18 +120,27 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
       })
       console.log('Officer status updated to Available')
 
-      // Update report status back to Pending so it can be reassigned
+      // Fetch current report data to get originalStatus from dispatchedTo
       const reportRef = ref(db, `civilian/civilian crime reports/${reportId}`)
+      const reportSnapshot = await get(reportRef)
+      const currentReportData = reportSnapshot.exists() ? reportSnapshot.val() : reportData
+      
+      // Get the original status before dispatch, or default to 'Pending'
+      const originalStatus = currentReportData.dispatchedTo?.originalStatus || currentReportData.status || 'Pending'
+      
+      // Update report status back to original status so it can be reassigned
       await set(reportRef, {
-        ...reportData,
-        status: 'Pending',
+        ...currentReportData,
+        status: originalStatus,
         dispatchedTo: null,
+        dispatchInfo: null,
         assignmentStatus: 'Declined',
         assignmentDeclined: {
           declinedBy: `${policeData.firstName} ${policeData.lastName}`,
           declinedAt: new Date().toISOString(),
           reason: 'Officer declined assignment'
-        }
+        },
+        requiresMobileConfirmation: null
       })
       console.log('Report status updated to Pending')
 
@@ -187,20 +196,109 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
       setDispatching(true)
       const db = getDatabase(app)
       
-      // Keep police officer status as "Available" - will be changed to "Dispatched" after mobile app confirmation
-      const policeRef = ref(db, `police/police account/${policeId}`)
-      await set(policeRef, {
-        ...policeData,
-        status: 'Available', // Keep as Available until mobile app confirmation
-        currentAssignment: {
+      console.log('Starting dispatch process...', {
+        reportId: reportId,
+        policeId: policeId,
+        policeData: policeData,
+        reportData: reportData
+      })
+
+      // Create dispatch information (matching EnhancedDispatch structure)
+      const dispatchInfo = {
+        unit: policeId,
+        unitName: `${policeData.rank || policeData.policeRank || 'Police Officer'} ${policeData.firstName} ${policeData.lastName}`,
+        unitEmail: policeData.email || '',
+        dispatchedAt: new Date().toISOString(),
+        dispatchedBy: 'admin@e-responde.com'
+      }
+
+      console.log('Dispatch info created:', dispatchInfo)
+
+      // Store the original status before changing to Dispatched
+      const originalStatus = reportData.status || 'Pending'
+
+      // Update the crime report status to Dispatched (matching EnhancedDispatch)
+      try {
+        console.log('Updating crime report...', reportId)
+        const reportRef = ref(db, `civilian/civilian crime reports/${reportId}`)
+        await update(reportRef, {
+          status: 'Dispatched',
+          dispatchInfo: {
+            ...dispatchInfo,
+            originalStatus: originalStatus
+          },
+          assignmentStatus: 'Pending Confirmation'
+        })
+        console.log('Crime report updated successfully')
+      } catch (error) {
+        console.error('Error updating crime report:', error)
+        throw new Error(`Failed to update crime report: ${error.message}`)
+      }
+
+      // Update officer status to Standby when assigned (waiting for confirmation)
+      try {
+        console.log('Updating officer status to Standby...', policeId)
+        const officerRef = ref(db, `police/police account/${policeId}`)
+        await update(officerRef, {
+          status: 'Standby'
+        })
+        console.log('Officer status updated to Standby successfully')
+      } catch (error) {
+        console.error('Error updating officer status:', error)
+        throw new Error(`Failed to update officer status: ${error.message}`)
+      }
+
+      // Update the officer's current assignment
+      try {
+        console.log('Updating officer current assignment...')
+        const currentAssignmentRef = ref(db, `police/police account/${policeId}/currentAssignment`)
+        const currentAssignmentData = {
           reportId: reportId,
+          incidentType: reportData?.type || reportData?.crimeType || 'Emergency',
+          incidentLocation: reportData?.location?.address || reportData?.location || 'Location not available',
           assignedAt: new Date().toISOString(),
-          incidentType: reportData?.type || 'Unknown',
-          incidentLocation: reportData?.location || 'Unknown',
+          description: reportData?.description || 'No description provided',
           assignmentStatus: 'Pending Confirmation',
           requiresMobileConfirmation: true
         }
-      })
+        await update(currentAssignmentRef, currentAssignmentData)
+        console.log('Officer current assignment updated successfully')
+      } catch (error) {
+        console.error('Error updating officer current assignment:', error)
+        throw new Error(`Failed to update officer current assignment: ${error.message}`)
+      }
+
+      // Create notification for the dispatched officer (matching EnhancedDispatch)
+      try {
+        console.log('Creating notification...')
+        const notificationId = `dispatch_${reportId}_${Date.now()}`
+        const notificationRef = ref(db, `police/notifications/${policeId}/${notificationId}`)
+        
+        const notificationData = {
+          id: notificationId,
+          type: 'dispatch_assignment',
+          title: 'New Dispatch Assignment - Confirmation Required',
+          message: `You have been assigned to respond to a ${reportData?.type || reportData?.crimeType || 'emergency'} report. Please confirm your acceptance in the mobile app.`,
+          reportId: reportId,
+          reportDetails: {
+            crimeType: reportData?.type || reportData?.crimeType || 'Emergency',
+            location: reportData?.location?.address || reportData?.location || 'Location not available',
+            description: reportData?.description || 'No description provided'
+          },
+          dispatchInfo: dispatchInfo,
+          createdAt: new Date().toISOString(),
+          isRead: false,
+          isActive: true,
+          requiresConfirmation: true,
+          assignmentStatus: 'Pending Confirmation'
+        }
+
+        await update(notificationRef, notificationData)
+        console.log('Notification created successfully')
+      } catch (error) {
+        console.error('Error creating notification:', error)
+        throw new Error(`Failed to create notification: ${error.message}`)
+      }
 
       // Create dispatch record
       const dispatchRef = ref(db, 'dispatches')
@@ -210,10 +308,10 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
         reportId: reportId,
         policeId: policeId,
         policeName: `${policeData.firstName} ${policeData.lastName}`,
-        policeRank: policeData.rank || 'Police Officer',
+        policeRank: policeData.rank || policeData.policeRank || 'Police Officer',
         policeContact: policeData.contactNumber,
-        incidentType: reportData?.type || 'Unknown',
-        incidentLocation: reportData?.location || 'Unknown',
+        incidentType: reportData?.type || reportData?.crimeType || 'Unknown',
+        incidentLocation: reportData?.location?.address || reportData?.location || 'Unknown',
         dispatchedAt: new Date().toISOString(),
         status: 'Pending Confirmation',
         eta: policeData.eta,
@@ -221,18 +319,10 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
         route: policeData.route
       })
 
-      // Update report status to "Assigned" (pending confirmation)
-      const reportRef = ref(db, `civilian/civilian crime reports/${reportId}`)
-      await set(reportRef, {
-        ...reportData,
-        status: 'Assigned',
-        dispatchedTo: {
-          policeId: policeId,
-          policeName: `${policeData.firstName} ${policeData.lastName}`,
-          dispatchedAt: new Date().toISOString(),
-          assignmentStatus: 'Pending Confirmation',
-          requiresMobileConfirmation: true
-        }
+      console.log('Officer dispatched successfully:', {
+        reportId: reportId,
+        officerId: policeId,
+        officerName: dispatchInfo.unitName
       })
 
       setDispatchSuccess({
@@ -240,6 +330,8 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
         dispatchId: newDispatchRef.key,
         eta: policeData.eta
       })
+
+      alert(`Officer ${dispatchInfo.unitName} has been assigned to the incident. They will receive a notification and must confirm the assignment in their mobile app.`)
 
       // Refresh police recommendations to show updated status
       if (reportData?.coordinates?.latitude && reportData?.coordinates?.longitude) {
@@ -251,9 +343,26 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
 
     } catch (error) {
       console.error('Error dispatching police:', error)
-      setDispatchSuccess({
-        error: 'Failed to dispatch police officer. Please try again.'
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
       })
+      
+      let errorMessage = 'Failed to dispatch police officer. Please try again.'
+      
+      if (error.code === 'PERMISSION_DENIED') {
+        errorMessage = 'Permission denied. Please check your Firebase rules.'
+      } else if (error.code === 'NETWORK_ERROR') {
+        errorMessage = 'Network error. Please check your internet connection.'
+      } else if (error.message) {
+        errorMessage = `Error: ${error.message}`
+      }
+      
+      setDispatchSuccess({
+        error: errorMessage
+      })
+      alert(errorMessage)
     } finally {
       setDispatching(false)
     }
