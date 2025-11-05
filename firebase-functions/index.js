@@ -1,6 +1,7 @@
-const { getUsers, updateUserStatus } = require('./getUsers');
+const { getUsers, updateUserStatus, createPoliceAccount, deletePoliceAccount } = require('./getUsers');
 
-module.exports = {
-  getUsers,
-  updateUserStatus
-};
+// Export functions for Firebase
+exports.getUsers = getUsers;
+exports.updateUserStatus = updateUserStatus;
+exports.createPoliceAccount = createPoliceAccount;
+exports.deletePoliceAccount = deletePoliceAccount;

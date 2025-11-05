@@ -106,9 +106,11 @@ const CrimeReportForm = () => {
         anonymous: formData.anonymous,
         status: 'pending',
         createdAt,
+        // Always store reporterUid so dashboard can fetch reporter name even when anonymous
+        reporterUid: user?.uid || 'admin',
+        // Only store reporterName if not anonymous
         ...(formData.anonymous ? {} : {
-          reporterName: formData.reporterName.trim(),
-          reporterUid: user?.uid || 'admin'
+          reporterName: formData.reporterName.trim()
         })
       }
 

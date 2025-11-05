@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
-import { realtimeDb, auth } from '../firebase'
+import { realtimeDb, auth, functions } from '../firebase'
 import { ref, push, set, get, remove } from 'firebase/database'
-import { createUserWithEmailAndPassword, updateProfile, deleteUser } from 'firebase/auth'
+import { createUserWithEmailAndPassword, updateProfile, signOut, signInWithEmailAndPassword } from 'firebase/auth'
+import { httpsCallable } from 'firebase/functions'
+import { useAuth } from '../providers/AuthProvider'
 import './PoliceAccountManagement.css'
 
 function PoliceAccountManagement() {
+  const { user: currentUser } = useAuth()
   // Police account creation form states
   const [showPoliceForm, setShowPoliceForm] = useState(false)
   const [policeFormData, setPoliceFormData] = useState({
@@ -29,6 +32,9 @@ function PoliceAccountManagement() {
   const [deleteLoading, setDeleteLoading] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [accountToDelete, setAccountToDelete] = useState(null)
+  
+  // Password visibility state
+  const [showPassword, setShowPassword] = useState(false)
 
 
   useEffect(() => {
@@ -48,10 +54,12 @@ function PoliceAccountManagement() {
         const policeData = snapshot.val()
         const accountList = []
         
-        // Convert the data to an array of police accounts (excluding deleted ones)
+        // Convert the data to an array of police accounts
         Object.keys(policeData).forEach(accountId => {
           const accountData = policeData[accountId]
-          if (accountData.email && accountData.firstName && !accountData.isDeleted) {
+          
+          // Only include accounts with proper email and firstName
+          if (accountData.email && accountData.firstName) {
             accountList.push({
               id: accountId,
               authUid: accountData.authUid || accountId, // Use authUid if available, fallback to accountId
@@ -188,40 +196,250 @@ function PoliceAccountManagement() {
       setPoliceFormError('')
       setPoliceFormSuccess('')
       
-      // Step 1: Create Firebase Authentication user
-      const userCredential = await createUserWithEmailAndPassword(
-        auth, 
-        policeFormData.email, 
-        policeFormData.password
-      )
+      // Step 1: Create Firebase Authentication user using Cloud Function (doesn't sign in the user)
+      let userUid = null
+      let alreadySavedToRTDB = false // Flag to track if we already saved in fallback path
       
-      const user = userCredential.user
+      // Get admin info for logging
+      let adminEmail = null
+      if (currentUser) {
+        adminEmail = currentUser.email
+      }
       
-      // Step 2: Update the user's display name
-      await updateProfile(user, {
-        displayName: `${policeFormData.firstName} ${policeFormData.lastName}`
-      })
+      try {
+        console.log('Creating police account via Cloud Function:', policeFormData.email)
+        const createPoliceAccountFunction = httpsCallable(functions, 'createPoliceAccount')
+        const result = await createPoliceAccountFunction({
+          email: policeFormData.email,
+          password: policeFormData.password,
+          firstName: policeFormData.firstName,
+          lastName: policeFormData.lastName,
+          contactNumber: policeFormData.contactNumber,
+          policeRank: policeFormData.policeRank,
+          displayName: `${policeFormData.firstName} ${policeFormData.lastName}`
+        })
+        
+        if (result.data && result.data.success) {
+          userUid = result.data.uid
+          console.log('Firebase Auth user created via Cloud Function:', userUid)
+        } else {
+          throw new Error('Cloud Function returned unsuccessful result')
+        }
+      } catch (cloudFunctionError) {
+        console.error('Error creating user via Cloud Function:', cloudFunctionError)
+        
+        // Check if Cloud Function is truly not available (not deployed)
+        const isFunctionNotDeployed = 
+          cloudFunctionError.code === 'functions/not-found' || 
+          cloudFunctionError.code === 'functions/unavailable' ||
+          cloudFunctionError.message?.includes('not found') ||
+          cloudFunctionError.message?.includes('not deployed') ||
+          cloudFunctionError.message?.includes('UNAVAILABLE')
+        
+        // Check if it's an internal error (function exists but has issues like CORS)
+        const isInternalError = 
+          cloudFunctionError.code === 'functions/internal' ||
+          cloudFunctionError.code === 'functions/unknown' ||
+          cloudFunctionError.code === 'functions/deadline-exceeded' ||
+          cloudFunctionError.message?.includes('CORS') ||
+          cloudFunctionError.message?.includes('DEADLINE_EXCEEDED')
+        
+        // Handle specific Cloud Function errors first (these should stop execution)
+        if (cloudFunctionError.code === 'functions/already-exists' || 
+            cloudFunctionError.message?.includes('already') ||
+            cloudFunctionError.message?.includes('email-already')) {
+          setPoliceFormError('This email address is already registered. Please use a different email.')
+          throw cloudFunctionError
+        } else if (cloudFunctionError.code === 'functions/invalid-argument') {
+          setPoliceFormError(cloudFunctionError.message || 'Invalid input. Please check all fields.')
+          throw cloudFunctionError
+        } else if (cloudFunctionError.code === 'functions/permission-denied' || 
+                   cloudFunctionError.code === 'functions/unauthenticated') {
+          setPoliceFormError('Authentication error. Please log in again and try creating the account.')
+          throw cloudFunctionError
+        }
+        
+        // For Cloud Function errors, create Auth user using client-side fallback
+        // This will log out admin but ensures mobile app login works
+        if (isFunctionNotDeployed || isInternalError) {
+          console.warn('Cloud Function not available. Using client-side fallback to create Auth user (admin will be logged out)')
+          
+          try {
+            // Save admin email before creating
+            const adminBeforeCreation = auth.currentUser
+            
+            if (!adminBeforeCreation) {
+              setPoliceFormError('Admin session not found. Please log in again.')
+              throw new Error('Admin session not found')
+            }
+            
+            // Create user using client-side (will sign in new user, logging out admin)
+            const userCredential = await createUserWithEmailAndPassword(
+              auth, 
+              policeFormData.email, 
+              policeFormData.password
+            )
+            
+            const user = userCredential.user
+            userUid = user.uid
+            
+            // Update display name
+            await updateProfile(user, {
+              displayName: `${policeFormData.firstName} ${policeFormData.lastName}`
+            })
+            
+            // Save to RTDB while still authenticated (before signing out)
+            const policeDataTemp = {
+              firstName: policeFormData.firstName,
+              lastName: policeFormData.lastName,
+              email: policeFormData.email,
+              contactNumber: policeFormData.contactNumber,
+              policeRank: policeFormData.policeRank,
+              authUid: userUid,
+              createdAt: new Date().toISOString(),
+              createdBy: adminEmail || 'admin@e-responde.com',
+              isActive: true,
+              lastLogin: null,
+              accountType: 'police'
+            }
+            
+            const policeRefTemp = ref(realtimeDb, `police/police account/${userUid}`)
+            await set(policeRefTemp, policeDataTemp)
+            console.log('Saved police account to RTDB before signOut at path:', `police/police account/${userUid}`)
+            console.log('Saved data:', JSON.stringify(policeDataTemp, null, 2))
+            
+            // Mark that we already saved to RTDB
+            alreadySavedToRTDB = true
+            
+            // Sign out the new user after saving to RTDB
+            await signOut(auth)
+            
+            console.warn('Fallback used: Admin session lost. Police account created with Auth user and saved to RTDB.')
+            
+          } catch (fallbackError) {
+            console.error('Fallback creation failed:', fallbackError)
+            if (fallbackError.code === 'auth/email-already-in-use') {
+              setPoliceFormError('This email address is already registered. Please use a different email.')
+            } else if (fallbackError.code === 'auth/invalid-email') {
+              setPoliceFormError('Please enter a valid email address.')
+            } else if (fallbackError.code === 'auth/weak-password') {
+              setPoliceFormError('Password is too weak. Please choose a stronger password.')
+            } else {
+              setPoliceFormError(`Failed to create police account: ${fallbackError.message || 'Unknown error'}`)
+            }
+            throw fallbackError
+          }
+        } else {
+          // For other errors, show detailed error and try fallback
+          const errorDetails = cloudFunctionError.details || cloudFunctionError.message || cloudFunctionError.code || 'Unknown error'
+          
+          try {
+            // Try fallback to create Auth user
+            const adminBeforeCreation = auth.currentUser
+            if (!adminBeforeCreation) {
+              setPoliceFormError('Admin session not found. Please log in again.')
+              throw new Error('Admin session not found')
+            }
+            
+            const userCredential = await createUserWithEmailAndPassword(
+              auth, 
+              policeFormData.email, 
+              policeFormData.password
+            )
+            
+            const user = userCredential.user
+            userUid = user.uid
+            
+            await updateProfile(user, {
+              displayName: `${policeFormData.firstName} ${policeFormData.lastName}`
+            })
+            
+            // Save to RTDB while still authenticated (before signing out)
+            const policeDataTemp = {
+              firstName: policeFormData.firstName,
+              lastName: policeFormData.lastName,
+              email: policeFormData.email,
+              contactNumber: policeFormData.contactNumber,
+              policeRank: policeFormData.policeRank,
+              authUid: userUid,
+              createdAt: new Date().toISOString(),
+              createdBy: adminEmail || 'admin@e-responde.com',
+              isActive: true,
+              lastLogin: null,
+              accountType: 'police'
+            }
+            
+            const policeRefTemp = ref(realtimeDb, `police/police account/${userUid}`)
+            await set(policeRefTemp, policeDataTemp)
+            console.log('Saved police account to RTDB before signOut (fallback path) at path:', `police/police account/${userUid}`)
+            console.log('Saved data:', JSON.stringify(policeDataTemp, null, 2))
+            
+            // Mark that we already saved to RTDB
+            alreadySavedToRTDB = true
+            
+            // Sign out the new user after saving to RTDB
+            await signOut(auth)
+            
+            console.warn('Fallback used due to Cloud Function error. Admin session lost. Police account created with Auth user and saved to RTDB.')
+            
+          } catch (fallbackError) {
+            console.error('Fallback also failed:', fallbackError)
+            if (fallbackError.code === 'auth/email-already-in-use') {
+              setPoliceFormError('This email address is already registered. Please use a different email.')
+            } else {
+              setPoliceFormError(`Failed to create police account: ${errorDetails}`)
+            }
+            throw fallbackError
+          }
+        }
+      }
       
-      // Step 3: Store additional police data in Realtime Database using Auth UID
+      // Verify we have some ID (either from Cloud Function or generated)
+      if (!userUid) {
+        throw new Error('Failed to generate user ID for database storage.')
+      }
+      
+      console.log('Saving police account to RTDB with userUid:', userUid)
+      
+      // Step 2: Store additional police data in Realtime Database using Auth UID
       const policeData = {
         firstName: policeFormData.firstName,
         lastName: policeFormData.lastName,
         email: policeFormData.email,
         contactNumber: policeFormData.contactNumber,
         policeRank: policeFormData.policeRank,
-        authUid: user.uid, // Link to Firebase Auth user
+        authUid: userUid, // Link to Firebase Auth user
         createdAt: new Date().toISOString(),
-        createdBy: 'admin@e-responde.com',
+        createdBy: adminEmail || 'admin@e-responde.com',
         isActive: true,
         lastLogin: null,
         accountType: 'police'
       }
       
-      // Store in Realtime Database using the Auth UID as the key
-      const policeRef = ref(realtimeDb, `police/police account/${user.uid}`)
-      await set(policeRef, policeData)
+      // Store in Realtime Database using the ID as the key
+      // Only save if we haven't already saved in fallback path
+      if (!alreadySavedToRTDB) {
+        const policeRef = ref(realtimeDb, `police/police account/${userUid}`)
+        console.log('Saving to RTDB path:', `police/police account/${userUid}`)
+        console.log('Police data to save:', policeData)
+        
+        try {
+          await set(policeRef, policeData)
+          console.log('Successfully saved police account to RTDB at path:', `police/police account/${userUid}`)
+          console.log('Saved data:', JSON.stringify(policeData, null, 2))
+        } catch (dbError) {
+          console.error('Error saving to RTDB:', dbError)
+          console.error('Error code:', dbError.code)
+          console.error('Error message:', dbError.message)
+          console.error('Full error:', dbError)
+          throw new Error(`Failed to save police account to database: ${dbError.message || dbError.code || 'Unknown error'}`)
+        }
+      } else {
+        console.log('Already saved to RTDB in fallback path, skipping duplicate save')
+      }
       
-      setPoliceFormSuccess('Police account created successfully! The officer can now log in with their email and password.')
+      // Show success message
+      setPoliceFormSuccess('Police account created successfully! Data saved to RTDB. The officer can now log in with their email and password in the mobile app.')
       setPoliceFormData({
         firstName: '',
         lastName: '',
@@ -242,7 +460,7 @@ function PoliceAccountManagement() {
     } catch (err) {
       console.error('Error creating police account:', err)
       
-      // More specific error messages for Firebase Auth
+      // More specific error messages
       if (err.code === 'auth/email-already-in-use') {
         setPoliceFormError('This email address is already registered. Please use a different email.')
       } else if (err.code === 'auth/invalid-email') {
@@ -255,9 +473,9 @@ function PoliceAccountManagement() {
         setPoliceFormError('Permission denied. Please check your Firebase database rules.')
       } else if (err.code === 'UNAVAILABLE') {
         setPoliceFormError('Firebase service is unavailable. Please try again later.')
-      } else if (err.message.includes('network')) {
+      } else if (err.message?.includes('network')) {
         setPoliceFormError('Network error. Please check your internet connection.')
-      } else if (err.message.includes('quota')) {
+      } else if (err.message?.includes('quota')) {
         setPoliceFormError('Database quota exceeded. Please contact administrator.')
       } else {
         setPoliceFormError(`Failed to create police account: ${err.message || 'Unknown error'}`)
@@ -300,48 +518,27 @@ function PoliceAccountManagement() {
 
       console.log('Starting complete deletion for police account:', accountToDelete.id)
 
-      // Step 1: Delete from Firebase Authentication (if authUid exists)
+      // Step 1: Delete the Firebase Authentication user using Cloud Function
       if (accountToDelete.authUid) {
         try {
-          console.log('Attempting to delete Firebase Auth user:', accountToDelete.authUid)
-          
-          // Get the current user to check if we can delete
-          const currentUser = auth.currentUser
-          if (currentUser && currentUser.uid === accountToDelete.authUid) {
-            // If trying to delete current user, sign them out first
-            await auth.signOut()
-            console.log('Signed out current user before deletion')
-          }
-          
-          // For now, we'll use a client-side approach
-          // The Firebase Auth user will remain but won't have access to data
-          // This prevents the "email already registered" error for new accounts
-          console.log('Note: Firebase Auth user will remain but will be disconnected from data')
-          console.log('To completely delete the Auth user, use Firebase Admin SDK on server-side')
-          
+          console.log('Deleting Firebase Auth user:', accountToDelete.authUid)
+          const deletePoliceAccountFunction = httpsCallable(functions, 'deletePoliceAccount')
+          const result = await deletePoliceAccountFunction({ authUid: accountToDelete.authUid })
+          console.log('Firebase Auth user deleted:', result.data)
         } catch (authError) {
-          console.warn('Could not delete auth user:', authError)
-          // Continue with database deletion even if auth deletion fails
+          console.error('Error deleting Firebase Auth user:', authError)
+          // If the function doesn't exist or there's an error, continue silently
+          console.warn('Could not delete Firebase Auth user. Make sure Cloud Functions are deployed.')
+          // Continue with database deletion even if Auth deletion fails
         }
       }
 
-      // Step 2: Mark account as deleted instead of removing completely
-      // This prevents the "email already registered" error while preserving audit trail
+      // Step 2: Delete the police account from Realtime Database
       const policeRef = ref(realtimeDb, `police/police account/${accountToDelete.id}`)
-      const deletedAccountData = {
-        ...accountToDelete,
-        isDeleted: true,
-        deletedAt: new Date().toISOString(),
-        deletedBy: 'admin@e-responde.com',
-        originalEmail: accountToDelete.email,
-        email: `deleted_${Date.now()}_${accountToDelete.email}`, // Change email to prevent conflicts
-        status: 'deleted'
-      }
-      
-      await set(policeRef, deletedAccountData)
-      console.log('Marked police account as deleted')
+      await remove(policeRef)
+      console.log('Deleted police account from database')
 
-      // Step 3: Also delete any related data (notifications, location data, etc.)
+      // Step 3: Delete all related data (notifications, location data, etc.)
       try {
         // Delete police location data
         const locationRef = ref(realtimeDb, `police/police location/${accountToDelete.id}`)
@@ -363,16 +560,16 @@ function PoliceAccountManagement() {
         // Continue even if related data deletion fails
       }
 
-      // Step 4: Update local state
+      // Step 3: Update local state
       setPoliceAccounts(prev => prev.filter(account => account.id !== accountToDelete.id))
       setTotalPoliceAccounts(prev => prev - 1)
 
-      // Step 5: Close confirmation dialog
+      // Step 4: Close confirmation dialog
       setShowDeleteConfirm(false)
       setAccountToDelete(null)
 
       // Show success message
-      setPoliceFormSuccess(`Police account for ${accountToDelete.firstName} ${accountToDelete.lastName} has been completely deleted. The email can now be used for new accounts.`)
+      setPoliceFormSuccess(`Police account for ${accountToDelete.firstName} ${accountToDelete.lastName} and all associated data have been permanently deleted.`)
 
       // Auto-hide success message after 5 seconds
       setTimeout(() => {
@@ -487,15 +684,35 @@ function PoliceAccountManagement() {
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="password">Password *</label>
-                  <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    value={policeFormData.password}
-                    onChange={handlePoliceFormChange}
-                    placeholder="Enter password (min. 6 characters, secure login)"
-                    required
-                  />
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      id="password"
+                      name="password"
+                      value={policeFormData.password}
+                      onChange={handlePoliceFormChange}
+                      placeholder="Enter password (min. 6 characters, secure login)"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <div className="form-group">
                   <label htmlFor="policeRank">Police Rank *</label>
