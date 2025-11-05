@@ -59,16 +59,44 @@ function SOSManagement() {
       
       const alertsList = []
       
+      // Helper function to get reporter name from civilian account
+      const getReporterName = async (userId) => {
+        if (!userId) return 'Unknown'
+        
+        try {
+          const civilianAccountRef = ref(realtimeDb, `civilian/civilian account/${userId}`)
+          const civilianAccountSnapshot = await get(civilianAccountRef)
+          
+          if (civilianAccountSnapshot.exists()) {
+            const civilianData = civilianAccountSnapshot.val()
+            const firstName = civilianData.firstName || ''
+            const lastName = civilianData.lastName || ''
+            const fullName = `${firstName} ${lastName}`.trim()
+            return fullName || 'Anonymous Reporter'
+          }
+          return 'Anonymous Reporter'
+        } catch (err) {
+          console.warn('Error fetching reporter name for userId:', userId, err)
+          return 'Anonymous Reporter'
+        }
+      }
+      
       // Process SOS alerts
       if (alertsSnapshot.exists()) {
         const alertsData = alertsSnapshot.val()
         console.log('Found SOS alerts:', Object.keys(alertsData).length)
-        Object.keys(alertsData).forEach(alertId => {
+        
+        for (const alertId of Object.keys(alertsData)) {
           try {
             const alert = alertsData[alertId]
+            const userId = alert.userId || alert.reporterUid || alert.uid
+            const reporterName = await getReporterName(userId)
+            
             alertsList.push({
               id: alertId,
               ...alert,
+              userId: userId,
+              reporterName: reporterName,
               type: 'sos_alert',
               createdAt: new Date(alert.createdAt || alert.timestamp),
               resolvedAt: alert.resolvedAt ? new Date(alert.resolvedAt) : null
@@ -76,7 +104,7 @@ function SOSManagement() {
           } catch (err) {
             console.warn('Error processing SOS alert:', alertId, err)
           }
-        })
+        }
       } else {
         console.log('No SOS alerts found in sos_alerts path')
       }
@@ -85,16 +113,20 @@ function SOSManagement() {
       if (notificationsSnapshot.exists()) {
         const notificationsData = notificationsSnapshot.val()
         console.log('Found notifications:', Object.keys(notificationsData).length)
-        Object.keys(notificationsData).forEach(userId => {
+        
+        for (const userId of Object.keys(notificationsData)) {
           try {
             const userNotifications = notificationsData[userId]
-            Object.keys(userNotifications).forEach(notificationId => {
+            const reporterName = await getReporterName(userId)
+            
+            for (const notificationId of Object.keys(userNotifications)) {
               try {
                 const notification = userNotifications[notificationId]
                 if (notification.type === 'sos_alert') {
                   alertsList.push({
                     id: notificationId,
                     userId: userId,
+                    reporterName: reporterName,
                     type: 'sos_notification',
                     title: notification.title,
                     message: notification.message,
@@ -107,11 +139,11 @@ function SOSManagement() {
               } catch (err) {
                 console.warn('Error processing notification:', notificationId, err)
               }
-            })
+            }
           } catch (err) {
             console.warn('Error processing user notifications:', userId, err)
           }
-        })
+        }
       } else {
         console.log('No notifications found')
       }
@@ -120,9 +152,12 @@ function SOSManagement() {
       if (civilianSnapshot.exists()) {
         const civilianData = civilianSnapshot.val()
         console.log('Found civilian data:', Object.keys(civilianData).length)
-        Object.keys(civilianData).forEach(userId => {
+        
+        for (const userId of Object.keys(civilianData)) {
           try {
             const userData = civilianData[userId]
+            const reporterName = await getReporterName(userId)
+            
             if (userData && typeof userData === 'object') {
               // Check for SOS alerts in various possible locations
               const possibleAlertPaths = [
@@ -141,6 +176,7 @@ function SOSManagement() {
                         alertsList.push({
                           id: alertId,
                           userId: userId,
+                          reporterName: reporterName,
                           type: 'civilian_sos',
                           title: alert.title || 'SOS Alert',
                           message: alert.message || 'Emergency SOS request',
@@ -161,7 +197,7 @@ function SOSManagement() {
           } catch (err) {
             console.warn('Error processing civilian user data:', userId, err)
           }
-        })
+        }
       } else {
         console.log('No civilian data found')
       }
@@ -189,8 +225,30 @@ function SOSManagement() {
     const notificationsRef = ref(realtimeDb, 'notifications')
     const civilianRef = ref(realtimeDb, 'civilian')
     
+    // Helper function to get reporter name from civilian account
+    const getReporterName = async (userId) => {
+      if (!userId) return 'Anonymous Reporter'
+      
+      try {
+        const civilianAccountRef = ref(realtimeDb, `civilian/civilian account/${userId}`)
+        const civilianAccountSnapshot = await get(civilianAccountRef)
+        
+        if (civilianAccountSnapshot.exists()) {
+          const civilianData = civilianAccountSnapshot.val()
+          const firstName = civilianData.firstName || ''
+          const lastName = civilianData.lastName || ''
+          const fullName = `${firstName} ${lastName}`.trim()
+          return fullName || 'Anonymous Reporter'
+        }
+        return 'Anonymous Reporter'
+      } catch (err) {
+        console.warn('Error fetching reporter name for userId:', userId, err)
+        return 'Anonymous Reporter'
+      }
+    }
+    
     // Listen for SOS alerts
-    onValue(alertsRef, (snapshot) => {
+    onValue(alertsRef, async (snapshot) => {
       try {
         console.log('SOS alerts real-time update:', snapshot.exists())
         if (snapshot.exists()) {
@@ -198,12 +256,17 @@ function SOSManagement() {
           const alertsList = []
           const activeAlertsList = []
           
-          Object.keys(alertsData).forEach(alertId => {
+          for (const alertId of Object.keys(alertsData)) {
             try {
               const alert = alertsData[alertId]
+              const userId = alert.userId || alert.reporterUid || alert.uid
+              const reporterName = await getReporterName(userId)
+              
               const alertObj = {
                 id: alertId,
                 ...alert,
+                userId: userId,
+                reporterName: reporterName,
                 type: 'sos_alert',
                 createdAt: new Date(alert.createdAt || alert.timestamp),
                 resolvedAt: alert.resolvedAt ? new Date(alert.resolvedAt) : null
@@ -218,7 +281,7 @@ function SOSManagement() {
             } catch (err) {
               console.warn('Error processing real-time SOS alert:', alertId, err)
             }
-          })
+          }
           
           alertsList.sort((a, b) => b.createdAt - a.createdAt)
           setSosAlerts(prev => {
@@ -236,23 +299,26 @@ function SOSManagement() {
     })
     
     // Listen for SOS notifications
-    onValue(notificationsRef, (snapshot) => {
+    onValue(notificationsRef, async (snapshot) => {
       try {
         console.log('Notifications real-time update:', snapshot.exists())
         if (snapshot.exists()) {
           const notificationsData = snapshot.val()
           const sosNotifications = []
           
-          Object.keys(notificationsData).forEach(userId => {
+          for (const userId of Object.keys(notificationsData)) {
             try {
               const userNotifications = notificationsData[userId]
-              Object.keys(userNotifications).forEach(notificationId => {
+              const reporterName = await getReporterName(userId)
+              
+              for (const notificationId of Object.keys(userNotifications)) {
                 try {
                   const notification = userNotifications[notificationId]
                   if (notification.type === 'sos_alert') {
                     sosNotifications.push({
                       id: notificationId,
                       userId: userId,
+                      reporterName: reporterName,
                       type: 'sos_notification',
                       title: notification.title,
                       message: notification.message,
@@ -265,11 +331,11 @@ function SOSManagement() {
                 } catch (err) {
                   console.warn('Error processing real-time notification:', notificationId, err)
                 }
-              })
+              }
             } catch (err) {
               console.warn('Error processing real-time user notifications:', userId, err)
             }
-          })
+          }
           
           setSosAlerts(prev => {
             const existing = prev.filter(alert => alert.type !== 'sos_notification')
@@ -283,7 +349,7 @@ function SOSManagement() {
     })
     
     // Listen for civilian SOS alerts (mobile app data)
-    onValue(civilianRef, (snapshot) => {
+    onValue(civilianRef, async (snapshot) => {
       try {
         console.log('Civilian data real-time update:', snapshot.exists())
         if (snapshot.exists()) {
@@ -291,9 +357,11 @@ function SOSManagement() {
           const civilianAlerts = []
           
           // Check for SOS alerts in civilian data structure
-          Object.keys(civilianData).forEach(userId => {
+          for (const userId of Object.keys(civilianData)) {
             try {
               const userData = civilianData[userId]
+              const reporterName = await getReporterName(userId)
+              
               if (userData && typeof userData === 'object') {
                 // Check for SOS alerts in various possible locations
                 const possibleAlertPaths = [
@@ -312,6 +380,7 @@ function SOSManagement() {
                           civilianAlerts.push({
                             id: alertId,
                             userId: userId,
+                            reporterName: reporterName,
                             type: 'civilian_sos',
                             title: alert.title || 'SOS Alert',
                             message: alert.message || 'Emergency SOS request',
@@ -332,7 +401,7 @@ function SOSManagement() {
             } catch (err) {
               console.warn('Error processing real-time civilian user data:', userId, err)
             }
-          })
+          }
           
           if (civilianAlerts.length > 0) {
             setSosAlerts(prev => {
@@ -531,8 +600,7 @@ function SOSManagement() {
         <div className="sos-management-header">
           <div className="header-content">
             <div>
-              <h1>SOS Alert Management</h1>
-              <p>Monitor and manage emergency SOS alerts from users</p>
+              <h1>Smart Watch SOS Alert Management</h1>
             </div>
             <button onClick={fetchSOSAlerts} className="refresh-btn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -561,8 +629,7 @@ function SOSManagement() {
       <div className="sos-management-header">
         <div className="header-content">
           <div>
-            <h1>SOS Alert Management</h1>
-            <p>Monitor and manage emergency SOS alerts from users</p>
+            <h1>Smart Watch SOS Alert Management</h1>
           </div>
           <button onClick={fetchSOSAlerts} className="refresh-btn" disabled={loading}>
             {loading ? (
@@ -605,20 +672,6 @@ function SOSManagement() {
           <div className="stat-content">
             <h3>Resolved</h3>
             <p className="stat-number">{sosStats.resolvedAlerts}</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Avg Response</h3>
-            <p className="stat-number">{formatDuration(sosStats.averageResponseTime)}</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Today</h3>
-            <p className="stat-number">{sosStats.todayAlerts}</p>
           </div>
         </div>
       </div>
@@ -767,7 +820,7 @@ function SOSManagement() {
                       </span>
                     </td>
                     <td className="alert-user">
-                      {alert.userId ? alert.userId.substring(0, 8) + '...' : 'Unknown'}
+                      {alert.reporterName || 'Anonymous Reporter'}
                     </td>
                     <td className="alert-status">
                       <span 
@@ -841,8 +894,13 @@ function SOSManagement() {
                   </span>
                 </div>
                 <div className="detail-item">
-                  <strong>User ID:</strong> {selectedAlert.userId || 'Unknown'}
+                  <strong>Reporter:</strong> {selectedAlert.reporterName || 'Anonymous Reporter'}
                 </div>
+                {selectedAlert.userId && (
+                  <div className="detail-item">
+                    <strong>User ID:</strong> {selectedAlert.userId}
+                  </div>
+                )}
                 <div className="detail-item">
                   <strong>Title:</strong> {selectedAlert.title || 'SOS Alert'}
                 </div>
