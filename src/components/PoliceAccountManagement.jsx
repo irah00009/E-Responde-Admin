@@ -399,11 +399,6 @@ function PoliceAccountManagement() {
 
   return (
     <div className="police-management-container">
-      <div className="police-management-header">
-        <h1>Police Account Management</h1>
-        <p>Create and manage police officer accounts for the Philippine National Police</p>
-      </div>
-
       {/* Police Account Creation Section */}
       <div className="police-account-section">
         <div className="section-header">
