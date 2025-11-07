@@ -1,0 +1,190 @@
+import { useState, useEffect } from 'react'
+import './App.css'
+import Dashboard from './components/Dashboard.jsx'
+import Analytics from './components/Analytics.jsx'
+import ViewReport from './components/ViewReport.jsx'
+import Heatmap from './components/Heatmap.jsx'
+import Dispatch from './components/Dispatch.jsx'
+import Login from './components/Login.jsx'
+import UserAccountManagement from './components/UserAccountManagement.jsx'
+import PoliceAccountManagement from './components/PoliceAccountManagement.jsx'
+
+function App() {
+  const [currentPage, setCurrentPage] = useState('dashboard')
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [selectedReportId, setSelectedReportId] = useState(null)
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false)
+
+  // Load user authentication state from localStorage on component mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem('e-responde-user')
+    if (savedUser) {
+      try {
+        const userData = JSON.parse(savedUser)
+        setUser(userData)
+      } catch (error) {
+        console.error('Error parsing saved user data:', error)
+        localStorage.removeItem('e-responde-user')
+      }
+    }
+  }, [])
+
+  const handleLoginSuccess = () => {
+    const userData = { email: 'admin', isAuthenticated: true }
+    setUser(userData)
+    // Save user data to localStorage to persist across page reloads
+    localStorage.setItem('e-responde-user', JSON.stringify(userData))
+  }
+
+  const handleLogout = () => {
+    setUser(null)
+    // Remove user data from localStorage when logging out
+    localStorage.removeItem('e-responde-user')
+  }
+
+  const handleNavigateToReport = (reportId) => {
+    setSelectedReportId(reportId);
+    setCurrentPage('view-report');
+  };
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard':
+        return <Dashboard onNavigateToReport={handleNavigateToReport} />
+      case 'analytics':
+        return <Analytics />
+      case 'view-report':
+        return <ViewReport reportId={selectedReportId} onBackToDashboard={() => setCurrentPage('dashboard')} />
+      case 'heatmap':
+        return <Heatmap />
+      case 'dispatch':
+        return <Dispatch />
+      case 'police-account-management':
+        return <PoliceAccountManagement />
+      case 'user-account-management':
+        return <UserAccountManagement />
+      default:
+        return <Dashboard onNavigateToReport={handleNavigateToReport} />
+    }
+  }
+
+  if (!user) {
+    return <Login onLoginSuccess={handleLoginSuccess} />
+  }
+
+  return (
+    <div className="app">
+      <div className="sidebar">
+        <div className="sidebar-header">
+          <h2>E-Responde</h2>
+        </div>
+        <nav className="sidebar-nav">
+          <button 
+            className={`nav-item ${currentPage === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('dashboard')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            Dashboard
+          </button>
+          <button 
+            className={`nav-item ${currentPage === 'analytics' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('analytics')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 3v18h18"></path>
+              <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path>
+            </svg>
+            Analytics
+          </button>
+          <button 
+            className={`nav-item ${currentPage === 'heatmap' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('heatmap')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+            Heatmap
+          </button>
+          <button 
+            className={`nav-item ${currentPage === 'dispatch' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('dispatch')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+            </svg>
+            Dispatch
+          </button>
+          <div className="nav-dropdown">
+            <button 
+              className={`nav-item nav-dropdown-toggle ${showAccountDropdown ? 'active' : ''}`}
+              onClick={() => setShowAccountDropdown(!showAccountDropdown)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              Account Management
+              <svg 
+                width="16" 
+                height="16" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2"
+                className={`dropdown-arrow ${showAccountDropdown ? 'rotated' : ''}`}
+              >
+                <polyline points="6,9 12,15 18,9"></polyline>
+              </svg>
+            </button>
+            {showAccountDropdown && (
+              <div className="dropdown-menu">
+                <button 
+                  className="dropdown-item"
+                  onClick={() => {
+                    setCurrentPage('police-account-management')
+                    setShowAccountDropdown(false)
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                  </svg>
+                  Police Account Management
+                </button>
+                <button 
+                  className="dropdown-item"
+                  onClick={() => {
+                    setCurrentPage('user-account-management')
+                    setShowAccountDropdown(false)
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  User Account Management
+                </button>
+              </div>
+            )}
+          </div>
+        </nav>
+        <div className="sidebar-footer">
+          <div className="user-info">
+            <button onClick={handleLogout} className="logout-btn">Logout</button>
+          </div>
+        </div>
+      </div>
+      <main className="main-content">
+        {renderPage()}
+      </main>
+    </div>
+  )
+}
+
+export default App
