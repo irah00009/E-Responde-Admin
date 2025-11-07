@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getDatabase, ref, onValue, off, update, get, push, set } from 'firebase/database'
 import { app, iceServers } from '../firebase'
@@ -23,39 +23,84 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [error, setError] = useState(null);
   const [highlightedReportId, setHighlightedReportId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
+  const [timeFilter, setTimeFilter] = useState('all');
+  const timeFilterOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'Weekly' },
+    { value: 'month', label: 'Monthly' },
+    { value: 'all', label: 'All Time' }
+  ];
+  
+  const timeFilterStart = useMemo(() => {
+    const now = new Date();
+    switch (timeFilter) {
+      case 'today': {
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      }
+      case 'week': {
+        const startOfRange = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startOfRange.setDate(startOfRange.getDate() - 7);
+        return startOfRange.getTime();
+      }
+      case 'month': {
+        const startOfRange = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startOfRange.setMonth(startOfRange.getMonth() - 1);
+        return startOfRange.getTime();
+      }
+      default:
+        return null;
+    }
+  }, [timeFilter]);
+  
+  const isWithinTimeFilter = useCallback((dateValue) => {
+    if (timeFilter === 'all') {
+      return true;
+    }
+    if (!dateValue) {
+      return false;
+    }
+    const timestamp = new Date(dateValue).getTime();
+    if (!Number.isFinite(timestamp)) {
+      return false;
+    }
+    return timestamp >= (timeFilterStart ?? 0);
+  }, [timeFilter, timeFilterStart]);
+  
+  const timeFilteredReports = useMemo(() => {
+    return recentSubmissions.filter(report => isWithinTimeFilter(report.date));
+  }, [recentSubmissions, isWithinTimeFilter]);
+  
+  const timeFilteredSmartWatch = useMemo(() => {
+    return smartWatchSOSAlerts.filter(alert => isWithinTimeFilter(alert.date));
+  }, [smartWatchSOSAlerts, isWithinTimeFilter]);
+  
+  const filteredSmartWatchSOS = useMemo(() => {
+    if (!activeFilter) {
+      return timeFilteredSmartWatch;
+    }
+    return timeFilteredSmartWatch.filter(alert => {
+      const status = typeof alert.status === 'string' ? alert.status.toLowerCase() : '';
+      switch (activeFilter) {
+        case 'pending':
+          return status === 'pending' || status === 'under review' || status === 'assigned' || status === 'active';
+        case 'received':
+          return status === 'received';
+        case 'in-progress':
+          return status === 'in progress';
+        case 'resolved':
+          return status === 'resolved' || status === 'case resolved';
+        default:
+          return true;
+      }
+    });
+  }, [activeFilter, timeFilteredSmartWatch]);
   
   // Threat Detection State - Using ML Cosine Similarity Model
   const [threatDetectionService] = useState(() => new MLThreatDetectionService());
   const [threatAnalysisResults, setThreatAnalysisResults] = useState([]);
   const [isAnalyzingThreats, setIsAnalyzingThreats] = useState(false);
   const [escalatedReports, setEscalatedReports] = useState([]);
-  
-  // Filter Smart Watch SoS alerts based on active filter
-  const filteredSmartWatchSOS = activeFilter 
-    ? smartWatchSOSAlerts.filter(alert => {
-        const status = typeof alert.status === 'string' ? alert.status.toLowerCase() : '';
-        switch (activeFilter) {
-          case 'pending':
-            return status === 'pending' || status === 'under review' || status === 'assigned' || status === 'active';
-          case 'received':
-            return status === 'received';
-          case 'in-progress':
-            return status === 'in progress';
-          case 'resolved':
-            return status === 'resolved' || status === 'case resolved';
-          default:
-            return true;
-        }
-      })
-    : smartWatchSOSAlerts;
 
-  const [stats, setStats] = useState({
-    receivedReports: 0,
-    pendingReports: 0,
-    resolvedReports: 0,
-    inProgressReports: 0,
-    smartWatchSOSReports: 0
-  });
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [updating, setUpdating] = useState(false);
@@ -95,7 +140,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   // Filter reports by severity levels
   // Immediate: Only reports with severity="immediate" OR Emergency SOS
   // High/Moderate/Low reports with threatDetected stay in their own sections
-  const immediateSeverityReports = recentSubmissions.filter(submission => {
+  const immediateSeverityReports = timeFilteredReports.filter(submission => {
     const isImmediate = typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'immediate';
     const isEmergencySOS = typeof submission.type === 'string' && submission.type.toLowerCase() === 'emergency sos';
     
@@ -115,7 +160,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return shouldInclude;
   });
 
-  const highSeverityReports = recentSubmissions.filter(submission => {
+  const highSeverityReports = timeFilteredReports.filter(submission => {
     const isHighSeverity = typeof submission.severity === 'string' && 
                           submission.severity.toLowerCase() === 'high';
     const isEmergencySOS = typeof submission.type === 'string' && 
@@ -125,7 +170,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return isHighSeverity && !isEmergencySOS;
   });
 
-  const moderateSeverityReports = recentSubmissions.filter(submission => {
+  const moderateSeverityReports = timeFilteredReports.filter(submission => {
     const isModerateSeverity = typeof submission.severity === 'string' && 
                               submission.severity.toLowerCase() === 'moderate';
     const isEmergencySOS = typeof submission.type === 'string' && 
@@ -135,7 +180,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return isModerateSeverity && !isEmergencySOS;
   });
 
-  const lowSeverityReports = recentSubmissions.filter(submission => {
+  const lowSeverityReports = timeFilteredReports.filter(submission => {
     const isLowSeverity = typeof submission.severity === 'string' && 
                          submission.severity.toLowerCase() === 'low';
     const isEmergencySOS = typeof submission.type === 'string' && 
@@ -147,7 +192,8 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
 
   // Debug logging for severity filtering
   console.log('Severity filtering results:', {
-    totalReports: recentSubmissions.length,
+    timeFilter,
+    totalReports: timeFilteredReports.length,
     immediateSeverity: immediateSeverityReports.length,
     highSeverity: highSeverityReports.length,
     moderateSeverity: moderateSeverityReports.length,
@@ -229,6 +275,35 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       })
     : lowSeverityReports;
   
+  const displayStats = (() => {
+    const counts = {
+      receivedReports: 0,
+      pendingReports: 0,
+      resolvedReports: 0,
+      inProgressReports: 0,
+      smartWatchSOSReports: 0
+    };
+
+    timeFilteredReports.forEach(report => {
+      const status = typeof report.status === 'string' ? report.status.toLowerCase() : '';
+      if (status === 'received') {
+        counts.receivedReports += 1;
+      }
+      if (status === 'in progress') {
+        counts.inProgressReports += 1;
+      }
+      if (status === 'pending' || status === 'under review' || status === 'assigned') {
+        counts.pendingReports += 1;
+      }
+      if (status === 'resolved' || status === 'case resolved') {
+        counts.resolvedReports += 1;
+      }
+    });
+
+    counts.smartWatchSOSReports = timeFilteredSmartWatch.length;
+    return counts;
+  })();
+
 
   // Pagination for severity-based reports
   const toTimestamp = (value) => {
@@ -381,31 +456,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           // Sort by date (newest first)
           reportsArray.sort((a, b) => new Date(b.date) - new Date(a.date));
         }
-        
-        // Calculate statistics
-        const receivedCount = reportsArray.filter(report => 
-          (report.status || '').toLowerCase() === 'received'
-        ).length;
-        
-        const pendingCount = reportsArray.filter(report => 
-          report.status.toLowerCase() === 'pending' || 
-          report.status.toLowerCase() === 'under review' ||
-          report.status.toLowerCase() === 'assigned'
-        ).length;
-        
-        const inProgressCount = reportsArray.filter(report => 
-          (report.status || '').toLowerCase() === 'in progress'
-        ).length;
-        
-        const resolvedCount = reportsArray.filter(report => isResolved(report.status)).length;
-        
-        setStats(prevStats => ({
-          receivedReports: receivedCount,
-          pendingReports: pendingCount,
-          resolvedReports: resolvedCount,
-          inProgressReports: inProgressCount,
-          smartWatchSOSReports: prevStats.smartWatchSOSReports // Keep existing value
-        }));
         
         // Check for new reports and trigger alarm
         
@@ -629,14 +679,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     };
   }, []);
 
-  // Update stats when Smart Watch SoS data changes
-  useEffect(() => {
-    setStats(prevStats => ({
-      ...prevStats,
-      smartWatchSOSReports: smartWatchSOSAlerts.length
-    }));
-  }, [smartWatchSOSAlerts]);
-
   // Cleanup audio when component unmounts
   useEffect(() => {
     return () => {
@@ -650,6 +692,14 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       stopRingingSound();
     }
   }, [callState.isCalling, callState.isInCall]);
+
+  useEffect(() => {
+    setCurrentPageImmediate(1);
+    setCurrentPageHigh(1);
+    setCurrentPageModerate(1);
+    setCurrentPageLow(1);
+    setCurrentPageSmartWatch(1);
+  }, [timeFilter]);
 
   const handleFilterClick = (filterType) => {
     setActiveFilter(activeFilter === filterType ? null : filterType);
@@ -1437,7 +1487,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       )}
 
       <section className="mb-8">
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-2xl font-bold text-black mb-2" style={{ 
             fontSize: '2.5rem', 
             fontWeight: '800', 
@@ -1445,6 +1495,19 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             letterSpacing: '-0.025em',
             textTransform: 'uppercase'
           }}>Report Overview</h2>
+          <div className="time-filter-wrapper">
+            <select
+              className="time-filter-select"
+              value={timeFilter}
+              onChange={(event) => setTimeFilter(event.target.value)}
+            >
+              {timeFilterOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <div 
@@ -1458,7 +1521,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.pendingReports}</div>
+            }}>{displayStats.pendingReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1477,7 +1540,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.receivedReports}</div>
+            }}>{displayStats.receivedReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1496,7 +1559,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.inProgressReports}</div>
+            }}>{displayStats.inProgressReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1515,7 +1578,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.resolvedReports}</div>
+            }}>{displayStats.resolvedReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1538,7 +1601,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.smartWatchSOSReports}</div>
+            }}>{displayStats.smartWatchSOSReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
