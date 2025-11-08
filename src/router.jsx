@@ -11,6 +11,7 @@ import SOSManagement from './components/SOSManagement.jsx'
 import EmergencyContactsManagement from './components/EmergencyContactsManagement.jsx'
 import ViewReport from './components/ViewReport.jsx'
 import CrimeReportForm from './components/CrimeReportForm.jsx'
+import FirestoreReports from './components/FirestoreReports.jsx'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 
 function ViewReportRoute() {
@@ -30,6 +31,7 @@ function DashboardRoute() {
     <Dashboard 
       onNavigateToReport={(reportId) => navigate(`/report/${reportId}`)}
       onNavigateToSOSAlert={(alertId) => navigate(`/sos-alert/${alertId}`)}
+      onNavigateToFirestoreReports={() => navigate('/firestore-reports')}
     />
   )
 }
@@ -54,6 +56,7 @@ const router = createBrowserRouter([
       { path: 'sos', element: <SOSManagement /> },
       { path: 'emergency-contacts', element: <EmergencyContactsManagement /> },
       { path: 'crime-report', element: <CrimeReportForm /> },
+      { path: 'firestore-reports', element: <FirestoreReports /> },
       {
         path: 'accounts',
         element: <AccountManagement />

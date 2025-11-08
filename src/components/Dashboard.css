@@ -59,6 +59,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .time-filter-select {
@@ -89,6 +90,36 @@
   pointer-events: none;
   color: #475569;
   font-size: 0.9rem;
+}
+
+.time-filter-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  color: #334155;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.15);
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.time-filter-icon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.time-filter-icon:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
+}
+
+.time-filter-icon:active {
+  transform: translateY(0);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.18);
 }
 
 /* Balanced Dashboard Typography */

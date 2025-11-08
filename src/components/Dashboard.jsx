@@ -7,7 +7,7 @@ import StatusTag from './StatusTag'
 import MLThreatDetectionService from '../services/mlThreatDetection.js'
 import './Dashboard.css'
 
-function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
+function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFirestoreReports }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user, claims, loading: authLoading } = useAuth()
@@ -69,6 +69,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const timeFilteredReports = useMemo(() => {
     return recentSubmissions.filter(report => isWithinTimeFilter(report.date));
   }, [recentSubmissions, isWithinTimeFilter]);
+
   
   const timeFilteredSmartWatch = useMemo(() => {
     return smartWatchSOSAlerts.filter(alert => isWithinTimeFilter(alert.date));
@@ -386,6 +387,35 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     if (description.length <= maxLength) return description
     return description.substring(0, maxLength) + '...'
   };
+
+  const normalizeDateValue = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return new Date(value).toISOString();
+    if (typeof value.toDate === 'function') {
+      try {
+        return value.toDate().toISOString();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const deriveLocationText = (payload) => {
+    if (!payload) return 'Location not available';
+    if (typeof payload === 'string') return payload;
+    if (payload.address) return payload.address;
+    if (payload.formatted_address) return payload.formatted_address;
+    if (payload.fullAddress) return payload.fullAddress;
+    if (payload.streetAddress) return payload.streetAddress;
+    if (payload.locationText) return payload.locationText;
+    if (payload.description) return payload.description;
+    if (payload.placeName) return payload.placeName;
+    return 'Location not available';
+  };
+
 
   // Set up real-time listener for crime reports and statistics
   useEffect(() => {
@@ -1317,6 +1347,24 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             textTransform: 'uppercase'
           }}>Report Overview</h2>
           <div className="time-filter-wrapper">
+            <button
+              type="button"
+              className="time-filter-icon"
+              onClick={onNavigateToFirestoreReports}
+              aria-label="Open realtime case resolved reports"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l1.2 2.4c.176.353.538.6.94.6H18.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
+                <path d="M3 8h18" />
+              </svg>
+            </button>
             <select
               className="time-filter-select"
               value={timeFilter}

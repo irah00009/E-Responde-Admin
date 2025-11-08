@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { realtimeDb } from '../firebase'
+import { realtimeDb, db as firestoreDb } from '../firebase'
 import { ref, get, onValue, off } from 'firebase/database'
+import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -95,6 +96,8 @@ function Analytics() {
   
   // Heatmap state variables
   const [reports, setReports] = useState([])
+  const [realtimeReports, setRealtimeReports] = useState([])
+  const [firestoreReports, setFirestoreReports] = useState([])
   const [selectedCrimeTypeHeatmap, setSelectedCrimeTypeHeatmap] = useState('')
   const [timeRange, setTimeRange] = useState('30')
   const [intensity, setIntensity] = useState(5)
@@ -499,39 +502,63 @@ function Analytics() {
     return Array.from(crimeTypes).sort()
   }
 
+  const normalizeLocation = (raw) => {
+    if (!raw) return { latitude: null, longitude: null, address: 'Unknown location' }
+    const latitude = raw.latitude ?? raw.lat ?? raw.latitudeDegrees ?? null
+    const longitude = raw.longitude ?? raw.lng ?? raw.longitudeDegrees ?? null
+    const address = raw.address || raw.location_address || raw.description || 'Unknown location'
+    return { latitude, longitude, address }
+  }
+
   // Fetch heatmap data from Firebase
   const fetchHeatmapData = async () => {
     try {
-      const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
-      const snapshot = await get(reportsRef)
-      
-      if (snapshot.exists()) {
-        const reportsData = snapshot.val()
-        const reportsArray = Object.entries(reportsData).map(([key, data]) => ({
+      const [realtimeSnapshot, firestoreSnapshot] = await Promise.all([
+        get(ref(realtimeDb, 'civilian/civilian crime reports')),
+        getDocs(collection(firestoreDb, 'crime_reports'))
+      ])
+
+      let realtimeArray = []
+      if (realtimeSnapshot.exists()) {
+        const reportsData = realtimeSnapshot.val()
+        realtimeArray = Object.entries(reportsData).map(([key, data]) => ({
           id: key,
+          source: 'realtime',
           ...data,
-          // Ensure location data is properly formatted
-          location: data.location || {
-            latitude: data.latitude || data.lat,
-            longitude: data.longitude || data.lng,
-            address: data.address || data.location_address || 'Unknown location'
-          }
+          location: normalizeLocation(data.location || data)
         }))
-        
-        setReports(reportsArray)
-        setAvailableCrimeTypes(extractCrimeTypes(reportsArray))
-        setLastUpdate(new Date())
-        console.log(`Loaded ${reportsArray.length} reports for heatmap`)
-        console.log('Available crime types:', extractCrimeTypes(reportsArray))
-      } else {
-        setReports([])
-        setAvailableCrimeTypes([])
-        console.log('No crime reports found for heatmap')
       }
+
+      const firestoreArray = firestoreSnapshot.docs.map(doc => {
+        const data = doc.data() || {}
+        return {
+          id: doc.id,
+          source: 'firestore',
+          ...data,
+          location: normalizeLocation(data.location || data)
+        }
+      })
+
+      setRealtimeReports(realtimeArray)
+      setFirestoreReports(firestoreArray)
+      console.log(`Loaded ${realtimeArray.length} realtime reports and ${firestoreArray.length} firestore reports for heatmap`)
     } catch (err) {
       console.error('Error fetching heatmap data:', err)
     }
   }
+
+  // Combine realtime + firestore reports whenever either changes
+  useEffect(() => {
+    const combined = [...realtimeReports, ...firestoreReports]
+    setReports(combined)
+    setAvailableCrimeTypes(extractCrimeTypes(combined))
+    setLastUpdate(new Date())
+    if (combined.length === 0) {
+      console.log('No crime reports found for heatmap')
+    } else {
+      console.log(`Updated combined heatmap dataset: ${combined.length} reports`)
+    }
+  }, [realtimeReports, firestoreReports])
 
   useEffect(() => {
     const initializeData = async () => {
@@ -548,10 +575,11 @@ function Analytics() {
     
     // Set up real-time listeners
     const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
+    const firestoreRef = collection(firestoreDb, 'crime_reports')
     const callsRef = ref(realtimeDb, 'voip_calls')
     const alertsRef = ref(realtimeDb, 'sos_alerts')
     
-    const unsubscribeReports = onValue(reportsRef, (snapshot) => {
+    const unsubscribeRealtimeReports = onValue(reportsRef, (snapshot) => {
       fetchSystemMetrics()
       calculateResponseMetrics()
       
@@ -560,21 +588,29 @@ function Analytics() {
          const reportsData = snapshot.val()
          const reportsArray = Object.entries(reportsData).map(([key, data]) => ({
            id: key,
+           source: 'realtime',
            ...data,
-           // Ensure location data is properly formatted
-           location: data.location || {
-             latitude: data.latitude || data.lat,
-             longitude: data.longitude || data.lng,
-             address: data.address || data.location_address || 'Unknown location'
-           }
+           location: normalizeLocation(data.location || data)
          }))
-         
-         setReports(reportsArray)
-         setAvailableCrimeTypes(extractCrimeTypes(reportsArray))
-         setLastUpdate(new Date())
-         console.log(`Real-time heatmap update: ${reportsArray.length} reports`)
-         console.log('Updated crime types:', extractCrimeTypes(reportsArray))
+         setRealtimeReports(reportsArray)
+         console.log(`Real-time heatmap update (Realtime DB): ${reportsArray.length} reports`)
+       } else {
+         setRealtimeReports([])
        }
+    })
+
+    const unsubscribeFirestore = onSnapshot(firestoreRef, (snapshot) => {
+      const firestoreArray = snapshot.docs.map(doc => {
+        const data = doc.data() || {}
+        return {
+          id: doc.id,
+          source: 'firestore',
+          ...data,
+          location: normalizeLocation(data.location || data)
+        }
+      })
+      setFirestoreReports(firestoreArray)
+      console.log(`Real-time heatmap update (Firestore): ${firestoreArray.length} reports`)
     })
     
     const unsubscribeCalls = onValue(callsRef, () => {
@@ -586,7 +622,8 @@ function Analytics() {
     })
     
     return () => {
-      off(reportsRef, 'value', unsubscribeReports)
+      off(reportsRef, 'value', unsubscribeRealtimeReports)
+      unsubscribeFirestore()
       off(callsRef, 'value', unsubscribeCalls)
       off(alertsRef, 'value', unsubscribeAlerts)
     }
