@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { realtimeDb } from '../firebase'
-import { ref, get, update, remove } from 'firebase/database'
+import { ref, get, update } from 'firebase/database'
 import './UserAccountManagement.css'
 
 function UserAccountManagement() {
@@ -106,50 +106,6 @@ function UserAccountManagement() {
     } catch (err) {
       console.error('Error updating user status:', err)
       setError('Failed to update user status. Please try again.')
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const handleCleanupUserData = async (userId, userEmail) => {
-    try {
-      setActionLoading(userId)
-      setError('')
-
-      // Clean up civilian account data
-      const civilianRef = ref(realtimeDb, `civilian/civilian account/${userId}`)
-      await remove(civilianRef)
-
-      // Clean up any police account data (if exists)
-      const policeRef = ref(realtimeDb, `police/police account/${userId}`)
-      await remove(policeRef)
-
-      // Clean up phone mappings
-      const phoneRef = ref(realtimeDb, `phone_mappings`)
-      const phoneSnapshot = await get(phoneRef)
-      if (phoneSnapshot.exists()) {
-        const phoneData = phoneSnapshot.val()
-        for (const [phoneNumber, data] of Object.entries(phoneData)) {
-          if (data.userId === userId || data.email === userEmail) {
-            await remove(ref(realtimeDb, `phone_mappings/${phoneNumber}`))
-          }
-        }
-      }
-
-      // Clean up emergency contacts
-      const emergencyRef = ref(realtimeDb, `emergency_contacts/${userId}`)
-      await remove(emergencyRef)
-
-      // Update local state
-      setUsers(prev => prev.filter(user => user.id !== userId))
-      setTotalUsers(prev => prev - 1)
-
-      console.log(`User data cleaned up successfully for ${userEmail}`)
-      alert(`User data cleaned up successfully. ${userEmail} can now sign up again.`)
-      
-    } catch (err) {
-      console.error('Error cleaning up user data:', err)
-      setError('Failed to clean up user data. Please try again.')
     } finally {
       setActionLoading(null)
     }
@@ -273,25 +229,6 @@ function UserAccountManagement() {
                               )}
                             </>
                           )}
-                        </button>
-                        <button
-                          className="action-btn cleanup-btn"
-                          onClick={() => {
-                            if (confirm(`Are you sure you want to clean up all data for ${user.email}? This will allow them to sign up again.`)) {
-                              handleCleanupUserData(user.id, user.email)
-                            }
-                          }}
-                          disabled={actionLoading === user.id}
-                          title="Clean up user data to allow re-signup"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M3 6h18"></path>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                            <line x1="10" y1="11" x2="10" y2="17"></line>
-                            <line x1="14" y1="11" x2="14" y2="17"></line>
-                          </svg>
-                          Cleanup
                         </button>
                       </div>
                     </td>

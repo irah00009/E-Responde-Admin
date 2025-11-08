@@ -118,24 +118,19 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [callError, setCallError] = useState('');
   const [callLoading, setCallLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [lastReportCount, setLastReportCount] = useState(0);
-  const [alarmEnabled, setAlarmEnabled] = useState(true);
-  const [newReportNotification, setNewReportNotification] = useState(null);
-  const [lastReportIds, setLastReportIds] = useState(new Set());
-  // Use ref to track previous report IDs synchronously (for real-time detection)
+  // Use refs to track previous alert IDs synchronously (for real-time detection)
   const lastReportIdsRef = useRef(new Set());
-  
+
   // WebRTC refs
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
-  
+
   // Audio refs for sound effects
   const ringingAudioRef = useRef(null);
   const ringingIntervalRef = useRef(null);
   const callConnectedAudioRef = useRef(null);
   const callEndedAudioRef = useRef(null);
-  const alarmAudioRef = useRef(null);
-  
+
 
   // Filter reports by severity levels
   // Immediate: Only reports with severity="immediate" OR Emergency SOS
@@ -478,85 +473,13 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           });
         }
         
-        // Handle new reports notification and alarm
-        if (newReportIds.size > 0 && previousReportIds.size > 0) {
-          console.log('NEW REPORTS DETECTED:', newReportIds.size, 'new reports');
-          
-          // Get the most recent new report
-          const newReportId = Array.from(newReportIds)[0];
-          const latestReport = reportsArray.find(report => report.id === newReportId);
-          
-          if (latestReport) {
-            // Play alarm sound for new reports
-            playAlarmSound();
-            
-            // Fetch reporter information for the notification
-            const fetchReporterInfo = async () => {
-              try {
-                let reporterName = 'Anonymous Reporter';
-                
-                console.log('Fetching reporter info for notification:', {
-                  reporterUid: latestReport.reporterUid,
-                  reportId: latestReport.id
-                });
-                
-                if (latestReport.reporterUid) {
-                  const reporterRef = ref(db, `civilian/civilian account/${latestReport.reporterUid}`);
-                  const reporterSnapshot = await get(reporterRef);
-                  
-                  if (reporterSnapshot.exists()) {
-                    const reporterData = reporterSnapshot.val();
-                    console.log('Reporter data found for notification:', reporterData);
-                    const firstName = reporterData.firstName || '';
-                    const lastName = reporterData.lastName || '';
-                    reporterName = `${firstName} ${lastName}`.trim() || 'Anonymous Reporter';
-                    console.log('Reporter name set to:', reporterName);
-                  } else {
-                    console.log('No reporter account found for UID:', latestReport.reporterUid);
-                  }
-                } else {
-                  console.log('No reporter UID available for report:', latestReport.id);
-                }
-                
-                // Show notification for new report with reporter info
-                setNewReportNotification({
-                  id: latestReport.id,
-                  type: latestReport.type,
-                  severity: latestReport.severity,
-                  reporterName: reporterName,
-                  timestamp: Date.now()
-                });
-                
-                console.log('NEW REPORT ALERT:', latestReport.type, 'from', reporterName);
-              } catch (error) {
-                console.error('Error fetching reporter info:', error);
-                // Show notification without reporter name if fetch fails
-                setNewReportNotification({
-                  id: latestReport.id,
-                  type: latestReport.type,
-                  severity: latestReport.severity,
-                  reporterName: 'Anonymous Reporter',
-                  timestamp: Date.now()
-                });
-              }
-            };
-            
-            fetchReporterInfo();
-            
-            // Auto-hide notification after 8 seconds (longer to read reporter name)
-            setTimeout(() => {
-              setNewReportNotification(null);
-            }, 8000);
-          }
-        } else if (previousReportIds.size === 0 && reportsArray.length > 0) {
+        if (previousReportIds.size === 0 && reportsArray.length > 0) {
           console.log('Initial load - setting report IDs');
         }
         
         // Update ref synchronously BEFORE state update (critical for detection)
         lastReportIdsRef.current = new Set(currentReportIds);
         
-        setLastReportCount(reportsArray.length);
-        setLastReportIds(currentReportIds);
         setRecentSubmissions(reportsArray);
         setError(null); // Clear any previous errors
         console.log('Reports updated in real-time:', reportsArray.length, 'reports');
@@ -620,6 +543,10 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           const alertsData = snapshot.val();
           alertsArray = Object.keys(alertsData).map(key => {
             const alert = alertsData[key];
+            const alertType = alert.alertType || alert.type || (alert.deviceType ? `${alert.deviceType} SoS` : 'Smart Watch SoS');
+            const normalizedDevice = alert.deviceType 
+              || (typeof alertType === 'string' && alertType.toLowerCase().includes('watch') ? 'Smart Watch' : 'SOS Device');
+            const reporterDisplayName = alert.userName || alert.reporterName || alert.fullName || null;
             
             // Handle location object properly
             let locationText = 'Location not available';
@@ -648,18 +575,19 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             
             return {
               id: key,
-              type: 'Smart Watch SoS',
+              type: alertType,
               description: alert.message || alert.description || 'Smart Watch SoS Alert',
               location: locationText,
               date: alert.timestamp || alert.createdAt || new Date().toISOString(),
               status: alert.status || 'active',
-              severity: 'immediate',
+              severity: alert.severity || 'immediate',
               userId: alert.userId || alert.user_id,
-              deviceType: alert.deviceType || 'Smart Watch'
+              deviceType: normalizedDevice,
+              reporterName: reporterDisplayName
             };
           });
         }
-        
+
         setSmartWatchSOSAlerts(alertsArray);
         console.log('Smart Watch SoS alerts updated:', alertsArray.length, 'alerts');
       } catch (err) {
@@ -854,75 +782,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       setIsMuted(!isMuted);
     }
   };
-
-  // Alarm Functions
-  const playAlarmSound = () => {
-    if (!alarmEnabled) {
-      return;
-    }
-    
-    try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator1 = audioContext.createOscillator();
-      const oscillator2 = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      // Connect both oscillators to the same gain node
-      oscillator1.connect(gainNode);
-      oscillator2.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Create an urgent alarm sound with two frequencies
-      oscillator1.frequency.setValueAtTime(800, audioContext.currentTime);
-      oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.1);
-      oscillator1.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
-      oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.3);
-      
-      oscillator2.frequency.setValueAtTime(600, audioContext.currentTime);
-      oscillator2.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
-      oscillator2.frequency.setValueAtTime(600, audioContext.currentTime + 0.2);
-      oscillator2.frequency.setValueAtTime(1000, audioContext.currentTime + 0.3);
-      
-      // Create a pulsing volume effect
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.05);
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime + 0.1);
-      gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.15);
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime + 0.2);
-      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.25);
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime + 0.3);
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.35);
-      
-      oscillator1.start(audioContext.currentTime);
-      oscillator2.start(audioContext.currentTime);
-      oscillator1.stop(audioContext.currentTime + 0.4);
-      oscillator2.stop(audioContext.currentTime + 0.4);
-      
-      alarmAudioRef.current = { audioContext, oscillator1, oscillator2, gainNode };
-      
-      // Auto cleanup after sound finishes
-      setTimeout(() => {
-        if (alarmAudioRef.current) {
-          try {
-            alarmAudioRef.current.audioContext.close();
-            alarmAudioRef.current = null;
-          } catch (error) {
-            console.log('Could not cleanup alarm audio:', error);
-          }
-        }
-      }, 500);
-      
-    } catch (error) {
-      console.log('Could not play alarm sound:', error);
-    }
-  };
-
-  const toggleAlarm = () => {
-    setAlarmEnabled(!alarmEnabled);
-  };
-
-
-
 
   // WebRTC Call Functions
   const handleCallClick = async (report) => {
@@ -1448,44 +1307,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
 
   return (
     <div className="min-h-full bg-gray-50 p-4 lg:p-6">
-      {/* New Report Notification */}
-      {newReportNotification && (
-        <div className="fixed top-4 right-4 bg-status-danger text-white p-4 rounded-xl shadow-lg z-50 max-w-md mx-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-lg font-bold">
-                !
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-lg mb-2">NEW CRIME REPORT</h3>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-medium">Crime Type:</span>
-                    <span>{newReportNotification.type}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Reported by:</span>
-                    <span>{newReportNotification.reporterName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Severity:</span>
-                    <span className="font-bold">
-                      {newReportNotification.severity?.toUpperCase() || 'UNKNOWN'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button 
-              className="ml-4 text-white hover:text-gray-200 text-xl font-bold"
-              onClick={() => setNewReportNotification(null)}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
-
       <section className="mb-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-2xl font-bold text-black mb-2" style={{ 
