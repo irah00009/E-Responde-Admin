@@ -122,8 +122,57 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [alarmEnabled, setAlarmEnabled] = useState(true);
   const [newReportNotification, setNewReportNotification] = useState(null);
   const [lastReportIds, setLastReportIds] = useState(new Set());
-  // Use ref to track previous report IDs synchronously (for real-time detection)
+  // Use refs to track previous alert IDs synchronously (for real-time detection)
   const lastReportIdsRef = useRef(new Set());
+  const lastSmartWatchAlertIdsRef = useRef(new Set());
+  const notificationTimeoutRef = useRef(null);
+
+  const resolveReporterName = useCallback(async (dbInstance, uid) => {
+    if (!uid) {
+      return 'Anonymous Reporter';
+    }
+
+    try {
+      const reporterRef = ref(dbInstance, `civilian/civilian account/${uid}`);
+      const reporterSnapshot = await get(reporterRef);
+
+      if (reporterSnapshot.exists()) {
+        const reporterData = reporterSnapshot.val() || {};
+        const firstName = reporterData.firstName || '';
+        const lastName = reporterData.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim();
+
+        if (fullName) {
+          return fullName;
+        }
+
+        if (reporterData.displayName) {
+          return reporterData.displayName;
+        }
+      }
+    } catch (error) {
+      console.error('Error resolving reporter name:', {
+        message: error.message,
+        stack: error.stack,
+        uid
+      });
+    }
+
+    return 'Anonymous Reporter';
+  }, []);
+
+  const triggerAlertNotification = useCallback((notification) => {
+    setNewReportNotification(notification);
+
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNewReportNotification(null);
+      notificationTimeoutRef.current = null;
+    }, notification?.duration ?? 8000);
+  }, []);
   
   // WebRTC refs
   const peerConnectionRef = useRef(null);
@@ -392,6 +441,15 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return description.substring(0, maxLength) + '...'
   };
 
+  useEffect(() => {
+    return () => {
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+        notificationTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   // Set up real-time listener for crime reports and statistics
   useEffect(() => {
     const db = getDatabase(app);
@@ -493,60 +551,46 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             // Fetch reporter information for the notification
             const fetchReporterInfo = async () => {
               try {
-                let reporterName = 'Anonymous Reporter';
-                
                 console.log('Fetching reporter info for notification:', {
                   reporterUid: latestReport.reporterUid,
                   reportId: latestReport.id
                 });
-                
-                if (latestReport.reporterUid) {
-                  const reporterRef = ref(db, `civilian/civilian account/${latestReport.reporterUid}`);
-                  const reporterSnapshot = await get(reporterRef);
-                  
-                  if (reporterSnapshot.exists()) {
-                    const reporterData = reporterSnapshot.val();
-                    console.log('Reporter data found for notification:', reporterData);
-                    const firstName = reporterData.firstName || '';
-                    const lastName = reporterData.lastName || '';
-                    reporterName = `${firstName} ${lastName}`.trim() || 'Anonymous Reporter';
-                    console.log('Reporter name set to:', reporterName);
-                  } else {
-                    console.log('No reporter account found for UID:', latestReport.reporterUid);
-                  }
-                } else {
-                  console.log('No reporter UID available for report:', latestReport.id);
-                }
-                
-                // Show notification for new report with reporter info
-                setNewReportNotification({
+
+                const reporterName = await resolveReporterName(db, latestReport.reporterUid);
+
+                triggerAlertNotification({
                   id: latestReport.id,
-                  type: latestReport.type,
+                  title: 'NEW CRIME REPORT',
                   severity: latestReport.severity,
-                  reporterName: reporterName,
-                  timestamp: Date.now()
+                  source: 'crime',
+                  timestamp: Date.now(),
+                  details: [
+                    { label: 'Crime Type', value: latestReport.type || 'Unknown' },
+                    { label: 'Reported By', value: reporterName },
+                    { label: 'Severity', value: (latestReport.severity?.toUpperCase() || 'UNKNOWN'), emphasize: true }
+                  ]
                 });
                 
                 console.log('NEW REPORT ALERT:', latestReport.type, 'from', reporterName);
               } catch (error) {
                 console.error('Error fetching reporter info:', error);
-                // Show notification without reporter name if fetch fails
-                setNewReportNotification({
+
+                triggerAlertNotification({
                   id: latestReport.id,
-                  type: latestReport.type,
+                  title: 'NEW CRIME REPORT',
                   severity: latestReport.severity,
-                  reporterName: 'Anonymous Reporter',
-                  timestamp: Date.now()
+                  source: 'crime',
+                  timestamp: Date.now(),
+                  details: [
+                    { label: 'Crime Type', value: latestReport.type || 'Unknown' },
+                    { label: 'Reported By', value: 'Anonymous Reporter' },
+                    { label: 'Severity', value: (latestReport.severity?.toUpperCase() || 'UNKNOWN'), emphasize: true }
+                  ]
                 });
               }
             };
             
             fetchReporterInfo();
-            
-            // Auto-hide notification after 8 seconds (longer to read reporter name)
-            setTimeout(() => {
-              setNewReportNotification(null);
-            }, 8000);
           }
         } else if (previousReportIds.size === 0 && reportsArray.length > 0) {
           console.log('Initial load - setting report IDs');
@@ -620,6 +664,10 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           const alertsData = snapshot.val();
           alertsArray = Object.keys(alertsData).map(key => {
             const alert = alertsData[key];
+            const alertType = alert.alertType || alert.type || (alert.deviceType ? `${alert.deviceType} SoS` : 'Smart Watch SoS');
+            const normalizedDevice = alert.deviceType 
+              || (typeof alertType === 'string' && alertType.toLowerCase().includes('watch') ? 'Smart Watch' : 'SOS Device');
+            const reporterDisplayName = alert.userName || alert.reporterName || alert.fullName || null;
             
             // Handle location object properly
             let locationText = 'Location not available';
@@ -648,17 +696,85 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             
             return {
               id: key,
-              type: 'Smart Watch SoS',
+              type: alertType,
               description: alert.message || alert.description || 'Smart Watch SoS Alert',
               location: locationText,
               date: alert.timestamp || alert.createdAt || new Date().toISOString(),
               status: alert.status || 'active',
-              severity: 'immediate',
+              severity: alert.severity || 'immediate',
               userId: alert.userId || alert.user_id,
-              deviceType: alert.deviceType || 'Smart Watch'
+              deviceType: normalizedDevice,
+              reporterName: reporterDisplayName
             };
           });
         }
+
+        const currentAlertIds = new Set(alertsArray.map(alert => alert.id));
+        const previousAlertIds = lastSmartWatchAlertIdsRef.current;
+        const newAlertIds = new Set([...currentAlertIds].filter(id => !previousAlertIds.has(id)));
+
+        if (newAlertIds.size > 0 && previousAlertIds.size > 0) {
+          console.log('NEW SMART WATCH SOS ALERTS DETECTED:', Array.from(newAlertIds));
+
+          const newestAlertId = Array.from(newAlertIds)[0];
+          const latestAlert = alertsArray.find(alert => alert.id === newestAlertId);
+
+          if (latestAlert) {
+            playAlarmSound();
+
+            const prepareNotification = async () => {
+              try {
+                const reporterName = latestAlert.reporterName 
+                  || await resolveReporterName(db, latestAlert.userId);
+
+                const alertTitle = typeof latestAlert.deviceType === 'string' && latestAlert.deviceType.toLowerCase().includes('watch')
+                  ? 'NEW SMART WATCH SOS'
+                  : 'NEW SOS ALERT';
+
+                triggerAlertNotification({
+                  id: latestAlert.id,
+                  title: alertTitle,
+                  severity: latestAlert.severity,
+                  source: 'sos',
+                  timestamp: Date.now(),
+                  details: [
+                    { label: 'Alert Type', value: latestAlert.type || 'SOS Alert' },
+                    { label: 'Triggered By', value: reporterName },
+                    { label: 'Status', value: (latestAlert.status?.toUpperCase() || 'ACTIVE'), emphasize: true }
+                  ]
+                });
+
+                console.log('NEW SMART WATCH SOS ALERT:', {
+                  id: latestAlert.id,
+                  type: latestAlert.type,
+                  reporterName,
+                  status: latestAlert.status
+                });
+              } catch (notificationError) {
+                console.error('Failed to prepare Smart Watch SoS notification:', notificationError);
+
+                triggerAlertNotification({
+                  id: latestAlert.id,
+                  title: 'NEW SOS ALERT',
+                  severity: latestAlert.severity,
+                  source: 'sos',
+                  timestamp: Date.now(),
+                  details: [
+                    { label: 'Alert Type', value: latestAlert.type || 'SOS Alert' },
+                    { label: 'Triggered By', value: latestAlert.userId || 'Unknown User' },
+                    { label: 'Status', value: (latestAlert.status?.toUpperCase() || 'ACTIVE'), emphasize: true }
+                  ]
+                });
+              }
+            };
+
+            prepareNotification();
+          }
+        } else if (previousAlertIds.size === 0 && alertsArray.length > 0) {
+          console.log('Smart Watch SoS alerts initial load:', alertsArray.length);
+        }
+
+        lastSmartWatchAlertIdsRef.current = new Set(currentAlertIds);
         
         setSmartWatchSOSAlerts(alertsArray);
         console.log('Smart Watch SoS alerts updated:', alertsArray.length, 'alerts');
@@ -1446,42 +1562,60 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     }
   }, [user, claims])
 
+  const notificationDetails = newReportNotification?.details?.length
+    ? newReportNotification.details
+    : newReportNotification
+      ? [
+          {
+            label: 'Details',
+            value: newReportNotification.message
+              || newReportNotification.type
+              || newReportNotification.severity
+              || 'New activity detected'
+          }
+        ]
+      : [];
+
   return (
     <div className="min-h-full bg-gray-50 p-4 lg:p-6">
       {/* New Report Notification */}
       {newReportNotification && (
-        <div className="fixed top-4 right-4 bg-status-danger text-white p-4 rounded-xl shadow-lg z-50 max-w-md mx-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-lg font-bold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-6 py-10 bg-black bg-opacity-50">
+          <div className="relative w-full max-w-4xl bg-status-danger text-white p-12 rounded-[2.5rem] shadow-[0_30px_60px_rgba(0,0,0,0.35)]">
+            <div className="flex items-start gap-6">
+              <div className="w-20 h-20 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-4xl font-extrabold">
                 !
               </div>
               <div className="flex-1">
-                <h3 className="font-bold text-lg mb-2">NEW CRIME REPORT</h3>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-medium">Crime Type:</span>
-                    <span>{newReportNotification.type}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Reported by:</span>
-                    <span>{newReportNotification.reporterName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Severity:</span>
-                    <span className="font-bold">
-                      {newReportNotification.severity?.toUpperCase() || 'UNKNOWN'}
-                    </span>
-                  </div>
+                <h3 className="text-4xl font-black mb-6 tracking-widest uppercase">
+                  {String(newReportNotification.title || 'NEW ALERT').toUpperCase()}
+                </h3>
+                <div className="space-y-6 text-xl leading-relaxed">
+                  {notificationDetails.map((detail, index) => (
+                    <div key={`${detail?.label || 'detail'}-${index}`} className="flex flex-wrap justify-between gap-6">
+                      <span className="font-semibold uppercase tracking-[0.4em] text-white/80">
+                        {String(detail?.label || 'Detail').toUpperCase()}
+                      </span>
+                      <span className={`${detail?.emphasize ? 'font-black text-4xl' : 'font-extrabold text-2xl'}`}>
+                        {String(detail?.value ?? 'N/A')}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
+              <button 
+                className="absolute top-8 right-10 text-white hover:text-gray-200 text-4xl font-black transition"
+                onClick={() => {
+                  if (notificationTimeoutRef.current) {
+                    clearTimeout(notificationTimeoutRef.current);
+                    notificationTimeoutRef.current = null;
+                  }
+                  setNewReportNotification(null);
+                }}
+              >
+                ×
+              </button>
             </div>
-            <button 
-              className="ml-4 text-white hover:text-gray-200 text-xl font-bold"
-              onClick={() => setNewReportNotification(null)}
-            >
-              ×
-            </button>
           </div>
         </div>
       )}
