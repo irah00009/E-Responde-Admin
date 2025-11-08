@@ -5,6 +5,9 @@ import { app, iceServers } from '../firebase'
 import { useAuth } from '../providers/AuthProvider'
 import StatusTag from './StatusTag'
 import MLThreatDetectionService from '../services/mlThreatDetection.js'
+import PieChart from './PieChart'
+import BarChart from './BarChart'
+import ReportSummary from './ReportSummary'
 import './Dashboard.css'
 
 function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
@@ -1429,6 +1432,63 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               color: '#64748b', 
               letterSpacing: '0.05em'
             }}>Smart Watch SoS</div>
+          </div>
+        </div>
+      </section>
+
+      {/* Analytics Section */}
+      <section className="mb-8">
+        <h2 className="text-2xl font-bold text-black mb-6" style={{ 
+          fontSize: '2.5rem', 
+          fontWeight: '800', 
+          color: '#1e293b', 
+          letterSpacing: '-0.025em',
+          textTransform: 'uppercase'
+        }}>Analytics Dashboard</h2>
+        
+        {/* Report Summary */}
+        <div className="mb-6">
+          <ReportSummary reports={timeFilteredReports} />
+        </div>
+        
+        {/* Charts Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Pie Chart - Crime Type Distribution */}
+          <div>
+            <PieChart 
+              data={timeFilteredReports} 
+              title="Crime Type Distribution"
+            />
+          </div>
+          
+          {/* Bar Chart - Status Breakdown */}
+          <div>
+            <BarChart 
+              data={timeFilteredReports} 
+              title="Reports by Status"
+              type="status"
+            />
+          </div>
+        </div>
+        
+        {/* Additional Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Bar Chart - Severity Breakdown */}
+          <div>
+            <BarChart 
+              data={timeFilteredReports} 
+              title="Reports by Severity"
+              type="severity"
+            />
+          </div>
+          
+          {/* Bar Chart - Monthly Trends */}
+          <div>
+            <BarChart 
+              data={timeFilteredReports} 
+              title="Monthly Report Trends"
+              type="monthly"
+            />
           </div>
         </div>
       </section>
