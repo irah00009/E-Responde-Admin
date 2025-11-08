@@ -48,7 +48,6 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
   let chartData = { labels: [], datasets: [] }
   
   if (type === "status") {
-    // Group by status
     const statusCounts = new Map()
     data.forEach(report => {
       if (isUnknownOrEmpty(report.status)) {
@@ -69,7 +68,6 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
       }]
     }
   } else if (type === "severity") {
-    // Group by severity
     const severityCounts = new Map()
     data.forEach(report => {
       if (isUnknownOrEmpty(report.severity)) {
@@ -90,7 +88,6 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
       }]
     }
   } else if (type === "monthly") {
-    // Group by month
     const monthlyCounts = {}
     data.forEach(report => {
       const dateStr = report.dateTime || report.createdAt || report.timestamp || report.date
@@ -107,7 +104,6 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
       }
     })
     
-    // Sort by date
     const sortedMonths = Object.keys(monthlyCounts).sort((a, b) => {
       return new Date(a) - new Date(b)
     })
@@ -222,4 +218,3 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
 }
 
 export default BarChart
-

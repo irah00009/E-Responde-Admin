@@ -11,7 +11,6 @@ import { buildPalette, buildBorderPalette } from './chartColors'
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
-  // Process data to get crime type counts
   const crimeTypeCounts = {}
   
   data.forEach(report => {
