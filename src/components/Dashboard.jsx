@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getDatabase, ref, onValue, off, update, get, push, set } from 'firebase/database'
 import { app, iceServers } from '../firebase'
 import { useAuth } from '../providers/AuthProvider'
 import StatusTag from './StatusTag'
 import MLThreatDetectionService from '../services/mlThreatDetection.js'
+import PieChart from './PieChart'
+import BarChart from './BarChart'
 import './Dashboard.css'
 
 function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
@@ -23,39 +25,85 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [error, setError] = useState(null);
   const [highlightedReportId, setHighlightedReportId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
+  const [timeFilter, setTimeFilter] = useState('all');
+  const [showAnalytics, setShowAnalytics] = useState(true);
+  const timeFilterOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'Weekly' },
+    { value: 'month', label: 'Monthly' },
+    { value: 'all', label: 'All Time' }
+  ];
+  
+  const timeFilterStart = useMemo(() => {
+    const now = new Date();
+    switch (timeFilter) {
+      case 'today': {
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      }
+      case 'week': {
+        const startOfRange = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startOfRange.setDate(startOfRange.getDate() - 7);
+        return startOfRange.getTime();
+      }
+      case 'month': {
+        const startOfRange = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startOfRange.setMonth(startOfRange.getMonth() - 1);
+        return startOfRange.getTime();
+      }
+      default:
+        return null;
+    }
+  }, [timeFilter]);
+  
+  const isWithinTimeFilter = useCallback((dateValue) => {
+    if (timeFilter === 'all') {
+      return true;
+    }
+    if (!dateValue) {
+      return false;
+    }
+    const timestamp = new Date(dateValue).getTime();
+    if (!Number.isFinite(timestamp)) {
+      return false;
+    }
+    return timestamp >= (timeFilterStart ?? 0);
+  }, [timeFilter, timeFilterStart]);
+  
+  const timeFilteredReports = useMemo(() => {
+    return recentSubmissions.filter(report => isWithinTimeFilter(report.date));
+  }, [recentSubmissions, isWithinTimeFilter]);
+  
+  const timeFilteredSmartWatch = useMemo(() => {
+    return smartWatchSOSAlerts.filter(alert => isWithinTimeFilter(alert.date));
+  }, [smartWatchSOSAlerts, isWithinTimeFilter]);
+  
+  const filteredSmartWatchSOS = useMemo(() => {
+    if (!activeFilter) {
+      return timeFilteredSmartWatch;
+    }
+    return timeFilteredSmartWatch.filter(alert => {
+      const status = typeof alert.status === 'string' ? alert.status.toLowerCase() : '';
+      switch (activeFilter) {
+        case 'pending':
+          return status === 'pending' || status === 'under review' || status === 'assigned' || status === 'active';
+        case 'received':
+          return status === 'received';
+        case 'in-progress':
+          return status === 'in progress';
+        case 'resolved':
+          return status === 'resolved' || status === 'case resolved';
+        default:
+          return true;
+      }
+    });
+  }, [activeFilter, timeFilteredSmartWatch]);
   
   // Threat Detection State - Using ML Cosine Similarity Model
   const [threatDetectionService] = useState(() => new MLThreatDetectionService());
   const [threatAnalysisResults, setThreatAnalysisResults] = useState([]);
   const [isAnalyzingThreats, setIsAnalyzingThreats] = useState(false);
   const [escalatedReports, setEscalatedReports] = useState([]);
-  
-  // Filter Smart Watch SoS alerts based on active filter
-  const filteredSmartWatchSOS = activeFilter 
-    ? smartWatchSOSAlerts.filter(alert => {
-        const status = typeof alert.status === 'string' ? alert.status.toLowerCase() : '';
-        switch (activeFilter) {
-          case 'pending':
-            return status === 'pending' || status === 'under review' || status === 'assigned' || status === 'active';
-          case 'received':
-            return status === 'received';
-          case 'in-progress':
-            return status === 'in progress';
-          case 'resolved':
-            return status === 'resolved' || status === 'case resolved';
-          default:
-            return true;
-        }
-      })
-    : smartWatchSOSAlerts;
 
-  const [stats, setStats] = useState({
-    receivedReports: 0,
-    pendingReports: 0,
-    resolvedReports: 0,
-    inProgressReports: 0,
-    smartWatchSOSReports: 0
-  });
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [updating, setUpdating] = useState(false);
@@ -73,29 +121,24 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [callError, setCallError] = useState('');
   const [callLoading, setCallLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [lastReportCount, setLastReportCount] = useState(0);
-  const [alarmEnabled, setAlarmEnabled] = useState(true);
-  const [newReportNotification, setNewReportNotification] = useState(null);
-  const [lastReportIds, setLastReportIds] = useState(new Set());
-  // Use ref to track previous report IDs synchronously (for real-time detection)
+  // Use refs to track previous alert IDs synchronously (for real-time detection)
   const lastReportIdsRef = useRef(new Set());
-  
+
   // WebRTC refs
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
-  
+
   // Audio refs for sound effects
   const ringingAudioRef = useRef(null);
   const ringingIntervalRef = useRef(null);
   const callConnectedAudioRef = useRef(null);
   const callEndedAudioRef = useRef(null);
-  const alarmAudioRef = useRef(null);
-  
+
 
   // Filter reports by severity levels
   // Immediate: Only reports with severity="immediate" OR Emergency SOS
   // High/Moderate/Low reports with threatDetected stay in their own sections
-  const immediateSeverityReports = recentSubmissions.filter(submission => {
+  const immediateSeverityReports = timeFilteredReports.filter(submission => {
     const isImmediate = typeof submission.severity === 'string' && submission.severity.toLowerCase() === 'immediate';
     const isEmergencySOS = typeof submission.type === 'string' && submission.type.toLowerCase() === 'emergency sos';
     
@@ -115,7 +158,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return shouldInclude;
   });
 
-  const highSeverityReports = recentSubmissions.filter(submission => {
+  const highSeverityReports = timeFilteredReports.filter(submission => {
     const isHighSeverity = typeof submission.severity === 'string' && 
                           submission.severity.toLowerCase() === 'high';
     const isEmergencySOS = typeof submission.type === 'string' && 
@@ -125,7 +168,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return isHighSeverity && !isEmergencySOS;
   });
 
-  const moderateSeverityReports = recentSubmissions.filter(submission => {
+  const moderateSeverityReports = timeFilteredReports.filter(submission => {
     const isModerateSeverity = typeof submission.severity === 'string' && 
                               submission.severity.toLowerCase() === 'moderate';
     const isEmergencySOS = typeof submission.type === 'string' && 
@@ -135,7 +178,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     return isModerateSeverity && !isEmergencySOS;
   });
 
-  const lowSeverityReports = recentSubmissions.filter(submission => {
+  const lowSeverityReports = timeFilteredReports.filter(submission => {
     const isLowSeverity = typeof submission.severity === 'string' && 
                          submission.severity.toLowerCase() === 'low';
     const isEmergencySOS = typeof submission.type === 'string' && 
@@ -147,7 +190,8 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
 
   // Debug logging for severity filtering
   console.log('Severity filtering results:', {
-    totalReports: recentSubmissions.length,
+    timeFilter,
+    totalReports: timeFilteredReports.length,
     immediateSeverity: immediateSeverityReports.length,
     highSeverity: highSeverityReports.length,
     moderateSeverity: moderateSeverityReports.length,
@@ -229,6 +273,35 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       })
     : lowSeverityReports;
   
+  const displayStats = (() => {
+    const counts = {
+      receivedReports: 0,
+      pendingReports: 0,
+      resolvedReports: 0,
+      inProgressReports: 0,
+      smartWatchSOSReports: 0
+    };
+
+    timeFilteredReports.forEach(report => {
+      const status = typeof report.status === 'string' ? report.status.toLowerCase() : '';
+      if (status === 'received') {
+        counts.receivedReports += 1;
+      }
+      if (status === 'in progress') {
+        counts.inProgressReports += 1;
+      }
+      if (status === 'pending' || status === 'under review' || status === 'assigned') {
+        counts.pendingReports += 1;
+      }
+      if (status === 'resolved' || status === 'case resolved') {
+        counts.resolvedReports += 1;
+      }
+    });
+
+    counts.smartWatchSOSReports = timeFilteredSmartWatch.length;
+    return counts;
+  })();
+
 
   // Pagination for severity-based reports
   const toTimestamp = (value) => {
@@ -382,31 +455,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           reportsArray.sort((a, b) => new Date(b.date) - new Date(a.date));
         }
         
-        // Calculate statistics
-        const receivedCount = reportsArray.filter(report => 
-          (report.status || '').toLowerCase() === 'received'
-        ).length;
-        
-        const pendingCount = reportsArray.filter(report => 
-          report.status.toLowerCase() === 'pending' || 
-          report.status.toLowerCase() === 'under review' ||
-          report.status.toLowerCase() === 'assigned'
-        ).length;
-        
-        const inProgressCount = reportsArray.filter(report => 
-          (report.status || '').toLowerCase() === 'in progress'
-        ).length;
-        
-        const resolvedCount = reportsArray.filter(report => isResolved(report.status)).length;
-        
-        setStats(prevStats => ({
-          receivedReports: receivedCount,
-          pendingReports: pendingCount,
-          resolvedReports: resolvedCount,
-          inProgressReports: inProgressCount,
-          smartWatchSOSReports: prevStats.smartWatchSOSReports // Keep existing value
-        }));
-        
         // Check for new reports and trigger alarm
         
         // Get current report IDs
@@ -428,85 +476,13 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           });
         }
         
-        // Handle new reports notification and alarm
-        if (newReportIds.size > 0 && previousReportIds.size > 0) {
-          console.log('NEW REPORTS DETECTED:', newReportIds.size, 'new reports');
-          
-          // Get the most recent new report
-          const newReportId = Array.from(newReportIds)[0];
-          const latestReport = reportsArray.find(report => report.id === newReportId);
-          
-          if (latestReport) {
-            // Play alarm sound for new reports
-            playAlarmSound();
-            
-            // Fetch reporter information for the notification
-            const fetchReporterInfo = async () => {
-              try {
-                let reporterName = 'Anonymous Reporter';
-                
-                console.log('Fetching reporter info for notification:', {
-                  reporterUid: latestReport.reporterUid,
-                  reportId: latestReport.id
-                });
-                
-                if (latestReport.reporterUid) {
-                  const reporterRef = ref(db, `civilian/civilian account/${latestReport.reporterUid}`);
-                  const reporterSnapshot = await get(reporterRef);
-                  
-                  if (reporterSnapshot.exists()) {
-                    const reporterData = reporterSnapshot.val();
-                    console.log('Reporter data found for notification:', reporterData);
-                    const firstName = reporterData.firstName || '';
-                    const lastName = reporterData.lastName || '';
-                    reporterName = `${firstName} ${lastName}`.trim() || 'Anonymous Reporter';
-                    console.log('Reporter name set to:', reporterName);
-                  } else {
-                    console.log('No reporter account found for UID:', latestReport.reporterUid);
-                  }
-                } else {
-                  console.log('No reporter UID available for report:', latestReport.id);
-                }
-                
-                // Show notification for new report with reporter info
-                setNewReportNotification({
-                  id: latestReport.id,
-                  type: latestReport.type,
-                  severity: latestReport.severity,
-                  reporterName: reporterName,
-                  timestamp: Date.now()
-                });
-                
-                console.log('NEW REPORT ALERT:', latestReport.type, 'from', reporterName);
-              } catch (error) {
-                console.error('Error fetching reporter info:', error);
-                // Show notification without reporter name if fetch fails
-                setNewReportNotification({
-                  id: latestReport.id,
-                  type: latestReport.type,
-                  severity: latestReport.severity,
-                  reporterName: 'Anonymous Reporter',
-                  timestamp: Date.now()
-                });
-              }
-            };
-            
-            fetchReporterInfo();
-            
-            // Auto-hide notification after 8 seconds (longer to read reporter name)
-            setTimeout(() => {
-              setNewReportNotification(null);
-            }, 8000);
-          }
-        } else if (previousReportIds.size === 0 && reportsArray.length > 0) {
+        if (previousReportIds.size === 0 && reportsArray.length > 0) {
           console.log('Initial load - setting report IDs');
         }
         
         // Update ref synchronously BEFORE state update (critical for detection)
         lastReportIdsRef.current = new Set(currentReportIds);
         
-        setLastReportCount(reportsArray.length);
-        setLastReportIds(currentReportIds);
         setRecentSubmissions(reportsArray);
         setError(null); // Clear any previous errors
         console.log('Reports updated in real-time:', reportsArray.length, 'reports');
@@ -570,6 +546,10 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
           const alertsData = snapshot.val();
           alertsArray = Object.keys(alertsData).map(key => {
             const alert = alertsData[key];
+            const alertType = alert.alertType || alert.type || (alert.deviceType ? `${alert.deviceType} SoS` : 'Smart Watch SoS');
+            const normalizedDevice = alert.deviceType 
+              || (typeof alertType === 'string' && alertType.toLowerCase().includes('watch') ? 'Smart Watch' : 'SOS Device');
+            const reporterDisplayName = alert.userName || alert.reporterName || alert.fullName || null;
             
             // Handle location object properly
             let locationText = 'Location not available';
@@ -598,18 +578,19 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             
             return {
               id: key,
-              type: 'Smart Watch SoS',
+              type: alertType,
               description: alert.message || alert.description || 'Smart Watch SoS Alert',
               location: locationText,
               date: alert.timestamp || alert.createdAt || new Date().toISOString(),
               status: alert.status || 'active',
-              severity: 'immediate',
+              severity: alert.severity || 'immediate',
               userId: alert.userId || alert.user_id,
-              deviceType: alert.deviceType || 'Smart Watch'
+              deviceType: normalizedDevice,
+              reporterName: reporterDisplayName
             };
           });
         }
-        
+
         setSmartWatchSOSAlerts(alertsArray);
         console.log('Smart Watch SoS alerts updated:', alertsArray.length, 'alerts');
       } catch (err) {
@@ -629,14 +610,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
     };
   }, []);
 
-  // Update stats when Smart Watch SoS data changes
-  useEffect(() => {
-    setStats(prevStats => ({
-      ...prevStats,
-      smartWatchSOSReports: smartWatchSOSAlerts.length
-    }));
-  }, [smartWatchSOSAlerts]);
-
   // Cleanup audio when component unmounts
   useEffect(() => {
     return () => {
@@ -650,6 +623,14 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       stopRingingSound();
     }
   }, [callState.isCalling, callState.isInCall]);
+
+  useEffect(() => {
+    setCurrentPageImmediate(1);
+    setCurrentPageHigh(1);
+    setCurrentPageModerate(1);
+    setCurrentPageLow(1);
+    setCurrentPageSmartWatch(1);
+  }, [timeFilter]);
 
   const handleFilterClick = (filterType) => {
     setActiveFilter(activeFilter === filterType ? null : filterType);
@@ -804,75 +785,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
       setIsMuted(!isMuted);
     }
   };
-
-  // Alarm Functions
-  const playAlarmSound = () => {
-    if (!alarmEnabled) {
-      return;
-    }
-    
-    try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator1 = audioContext.createOscillator();
-      const oscillator2 = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      // Connect both oscillators to the same gain node
-      oscillator1.connect(gainNode);
-      oscillator2.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Create an urgent alarm sound with two frequencies
-      oscillator1.frequency.setValueAtTime(800, audioContext.currentTime);
-      oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.1);
-      oscillator1.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
-      oscillator1.frequency.setValueAtTime(1200, audioContext.currentTime + 0.3);
-      
-      oscillator2.frequency.setValueAtTime(600, audioContext.currentTime);
-      oscillator2.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
-      oscillator2.frequency.setValueAtTime(600, audioContext.currentTime + 0.2);
-      oscillator2.frequency.setValueAtTime(1000, audioContext.currentTime + 0.3);
-      
-      // Create a pulsing volume effect
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.05);
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime + 0.1);
-      gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.15);
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime + 0.2);
-      gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.25);
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime + 0.3);
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.35);
-      
-      oscillator1.start(audioContext.currentTime);
-      oscillator2.start(audioContext.currentTime);
-      oscillator1.stop(audioContext.currentTime + 0.4);
-      oscillator2.stop(audioContext.currentTime + 0.4);
-      
-      alarmAudioRef.current = { audioContext, oscillator1, oscillator2, gainNode };
-      
-      // Auto cleanup after sound finishes
-      setTimeout(() => {
-        if (alarmAudioRef.current) {
-          try {
-            alarmAudioRef.current.audioContext.close();
-            alarmAudioRef.current = null;
-          } catch (error) {
-            console.log('Could not cleanup alarm audio:', error);
-          }
-        }
-      }, 500);
-      
-    } catch (error) {
-      console.log('Could not play alarm sound:', error);
-    }
-  };
-
-  const toggleAlarm = () => {
-    setAlarmEnabled(!alarmEnabled);
-  };
-
-
-
 
   // WebRTC Call Functions
   const handleCallClick = async (report) => {
@@ -1398,46 +1310,8 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
 
   return (
     <div className="min-h-full bg-gray-50 p-4 lg:p-6">
-      {/* New Report Notification */}
-      {newReportNotification && (
-        <div className="fixed top-4 right-4 bg-status-danger text-white p-4 rounded-xl shadow-lg z-50 max-w-md mx-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-lg font-bold">
-                !
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-lg mb-2">NEW CRIME REPORT</h3>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-medium">Crime Type:</span>
-                    <span>{newReportNotification.type}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Reported by:</span>
-                    <span>{newReportNotification.reporterName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-medium">Severity:</span>
-                    <span className="font-bold">
-                      {newReportNotification.severity?.toUpperCase() || 'UNKNOWN'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button 
-              className="ml-4 text-white hover:text-gray-200 text-xl font-bold"
-              onClick={() => setNewReportNotification(null)}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
-
       <section className="mb-8">
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-2xl font-bold text-black mb-2" style={{ 
             fontSize: '2.5rem', 
             fontWeight: '800', 
@@ -1445,6 +1319,30 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             letterSpacing: '-0.025em',
             textTransform: 'uppercase'
           }}>Report Overview</h2>
+          <div className="time-filter-wrapper">
+            <select
+              className="time-filter-select"
+              value={timeFilter}
+              onChange={(event) => setTimeFilter(event.target.value)}
+            >
+              {timeFilterOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={`analytics-toggle-btn ${showAnalytics ? 'analytics-toggle-btn--active' : ''}`}
+              onClick={() => setShowAnalytics(prev => !prev)}
+              aria-label={showAnalytics ? 'Hide analytics' : 'Show analytics'}
+            >
+              <span className="analytics-toggle-indicator" />
+              <span className="analytics-toggle-text">
+                {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
+              </span>
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <div 
@@ -1458,7 +1356,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.pendingReports}</div>
+            }}>{displayStats.pendingReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1477,7 +1375,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.receivedReports}</div>
+            }}>{displayStats.receivedReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1496,7 +1394,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.inProgressReports}</div>
+            }}>{displayStats.inProgressReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1515,7 +1413,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.resolvedReports}</div>
+            }}>{displayStats.resolvedReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1538,7 +1436,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
               fontWeight: '800', 
               color: '#1e293b', 
               letterSpacing: '-0.025em'
-            }}>{stats.smartWatchSOSReports}</div>
+            }}>{displayStats.smartWatchSOSReports}</div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
               fontSize: '0.95rem', 
               fontWeight: '700', 
@@ -1547,6 +1445,55 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
             }}>Smart Watch SoS</div>
           </div>
         </div>
+      </section>
+
+      {/* Analytics Section */}
+      <section className="mb-8">
+        {showAnalytics && (
+          <>
+            <h2 className="text-2xl font-bold text-black mb-6" style={{ 
+              fontSize: '2.5rem', 
+              fontWeight: '800', 
+              color: '#1e293b', 
+              letterSpacing: '-0.025em',
+              textTransform: 'uppercase'
+            }}>Crime Reports Analytics</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div>
+                <PieChart 
+                  data={timeFilteredReports} 
+                  title="Crime Type Distribution"
+                />
+              </div>
+
+              <div>
+                <BarChart 
+                  data={timeFilteredReports} 
+                  title="Reports by Status"
+                  type="status"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <BarChart 
+                  data={timeFilteredReports} 
+                  title="Reports by Severity"
+                  type="severity"
+                />
+              </div>
+
+              <div>
+                <BarChart 
+                  data={timeFilteredReports} 
+                  title="Monthly Report Trends"
+                  type="monthly"
+                />
+              </div>
+            </div>
+          </>
+        )}
       </section>
 
       {/* Threat Analysis Status */}
