@@ -9,6 +9,7 @@ import {
   Legend
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
+import { buildPalette, buildBorderPalette } from './chartColors'
 
 ChartJS.register(
   CategoryScale,
@@ -19,69 +20,74 @@ ChartJS.register(
   Legend
 )
 
+const toTitleCase = (value) => value
+  .toLowerCase()
+  .replace(/\b\w/g, char => char.toUpperCase())
+
+const isUnknownOrEmpty = (value) => {
+  if (value === null || value === undefined) {
+    return true
+  }
+  const normalized = String(value).trim()
+  return normalized.length === 0 || normalized.toLowerCase() === 'unknown'
+}
+
+const incrementCount = (value, map) => {
+  const raw = String(value).trim()
+  const key = raw.toLowerCase()
+  const formatted = toTitleCase(raw)
+
+  if (map.has(key)) {
+    map.get(key).count += 1
+  } else {
+    map.set(key, { label: formatted, count: 1 })
+  }
+}
+
 const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) => {
   let chartData = { labels: [], datasets: [] }
   
   if (type === "status") {
-    // Group by status
-    const statusCounts = {}
+    const statusCounts = new Map()
     data.forEach(report => {
-      const status = report.status || 'Unknown'
-      statusCounts[status] = (statusCounts[status] || 0) + 1
+      if (isUnknownOrEmpty(report.status)) {
+        return
+      }
+      incrementCount(report.status, statusCounts)
     })
     
+    const labels = Array.from(statusCounts.values()).map(item => item.label)
     chartData = {
-      labels: Object.keys(statusCounts),
+      labels,
       datasets: [{
         label: 'Number of Reports',
-        data: Object.values(statusCounts),
-        backgroundColor: [
-          'rgba(239, 68, 68, 0.8)',   // Red - Pending
-          'rgba(245, 158, 11, 0.8)',  // Amber - In Progress
-          'rgba(59, 130, 246, 0.8)',  // Blue - Dispatched
-          'rgba(16, 185, 129, 0.8)',  // Green - Resolved
-          'rgba(107, 114, 128, 0.8)', // Gray - Unknown
-        ],
-        borderColor: [
-          'rgba(239, 68, 68, 1)',
-          'rgba(245, 158, 11, 1)',
-          'rgba(59, 130, 246, 1)',
-          'rgba(16, 185, 129, 1)',
-          'rgba(107, 114, 128, 1)',
-        ],
+        data: Array.from(statusCounts.values()).map(item => item.count),
+        backgroundColor: buildPalette(labels.length, 0.9),
+        borderColor: buildBorderPalette(labels.length),
         borderWidth: 2,
       }]
     }
   } else if (type === "severity") {
-    // Group by severity
-    const severityCounts = {}
+    const severityCounts = new Map()
     data.forEach(report => {
-      const severity = report.severity || 'Unknown'
-      severityCounts[severity] = (severityCounts[severity] || 0) + 1
+      if (isUnknownOrEmpty(report.severity)) {
+        return
+      }
+      incrementCount(report.severity, severityCounts)
     })
     
+    const labels = Array.from(severityCounts.values()).map(item => item.label)
     chartData = {
-      labels: Object.keys(severityCounts),
+      labels,
       datasets: [{
         label: 'Number of Reports',
-        data: Object.values(severityCounts),
-        backgroundColor: [
-          'rgba(16, 185, 129, 0.8)',  // Green - Low
-          'rgba(245, 158, 11, 0.8)',  // Amber - Moderate
-          'rgba(251, 146, 60, 0.8)',  // Orange - High
-          'rgba(239, 68, 68, 0.8)',   // Red - Immediate
-        ],
-        borderColor: [
-          'rgba(16, 185, 129, 1)',
-          'rgba(245, 158, 11, 1)',
-          'rgba(251, 146, 60, 1)',
-          'rgba(239, 68, 68, 1)',
-        ],
+        data: Array.from(severityCounts.values()).map(item => item.count),
+        backgroundColor: buildPalette(labels.length, 0.9),
+        borderColor: buildBorderPalette(labels.length),
         borderWidth: 2,
       }]
     }
   } else if (type === "monthly") {
-    // Group by month
     const monthlyCounts = {}
     data.forEach(report => {
       const dateStr = report.dateTime || report.createdAt || report.timestamp || report.date
@@ -98,7 +104,6 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
       }
     })
     
-    // Sort by date
     const sortedMonths = Object.keys(monthlyCounts).sort((a, b) => {
       return new Date(a) - new Date(b)
     })
@@ -108,8 +113,8 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
       datasets: [{
         label: 'Number of Reports',
         data: sortedMonths.map(month => monthlyCounts[month]),
-        backgroundColor: 'rgba(59, 130, 246, 0.8)',
-        borderColor: 'rgba(59, 130, 246, 1)',
+        backgroundColor: buildPalette(sortedMonths.length, 0.9),
+        borderColor: buildBorderPalette(sortedMonths.length),
         borderWidth: 2,
       }]
     }
@@ -213,4 +218,3 @@ const BarChart = ({ data = [], title = "Crime Statistics", type = "status" }) =>
 }
 
 export default BarChart
-

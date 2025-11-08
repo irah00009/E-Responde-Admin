@@ -486,6 +486,66 @@
 }
 
 
+.analytics-toggle-btn {
+  margin-left: 0.75rem;
+  background: linear-gradient(135deg, #d5deed 0%, #c7cbf0 100%);
+  color: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  padding: 0.45rem 1.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+}
+
+.analytics-toggle-btn .analytics-toggle-text {
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, max-width 0.2s ease;
+}
+
+.analytics-toggle-btn--active .analytics-toggle-text {
+  opacity: 1;
+  max-width: 160px;
+}
+
+.analytics-toggle-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.25);
+}
+
+.analytics-toggle-btn:active {
+  transform: translateY(0);
+}
+
+.analytics-toggle-btn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.4);
+  outline-offset: 2px;
+}
+
+.analytics-toggle-indicator {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 9999px;
+  background: #475569;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.25);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.analytics-toggle-btn--active .analytics-toggle-indicator {
+  background: #1d4ed8;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25);
+}
+
+
 /* Update Status Modal */
 .modal-overlay {
   position: fixed;

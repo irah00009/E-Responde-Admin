@@ -7,7 +7,6 @@ import StatusTag from './StatusTag'
 import MLThreatDetectionService from '../services/mlThreatDetection.js'
 import PieChart from './PieChart'
 import BarChart from './BarChart'
-import ReportSummary from './ReportSummary'
 import './Dashboard.css'
 
 function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
@@ -27,6 +26,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
   const [highlightedReportId, setHighlightedReportId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
   const [timeFilter, setTimeFilter] = useState('all');
+  const [showAnalytics, setShowAnalytics] = useState(true);
   const timeFilterOptions = [
     { value: 'today', label: 'Today' },
     { value: 'week', label: 'Weekly' },
@@ -1331,6 +1331,17 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              className={`analytics-toggle-btn ${showAnalytics ? 'analytics-toggle-btn--active' : ''}`}
+              onClick={() => setShowAnalytics(prev => !prev)}
+              aria-label={showAnalytics ? 'Hide analytics' : 'Show analytics'}
+            >
+              <span className="analytics-toggle-indicator" />
+              <span className="analytics-toggle-text">
+                {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
+              </span>
+            </button>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -1438,59 +1449,51 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert }) {
 
       {/* Analytics Section */}
       <section className="mb-8">
-        <h2 className="text-2xl font-bold text-black mb-6" style={{ 
-          fontSize: '2.5rem', 
-          fontWeight: '800', 
-          color: '#1e293b', 
-          letterSpacing: '-0.025em',
-          textTransform: 'uppercase'
-        }}>Analytics Dashboard</h2>
-        
-        {/* Report Summary */}
-        <div className="mb-6">
-          <ReportSummary reports={timeFilteredReports} />
-        </div>
-        
-        {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Pie Chart - Crime Type Distribution */}
-          <div>
-            <PieChart 
-              data={timeFilteredReports} 
-              title="Crime Type Distribution"
-            />
-          </div>
-          
-          {/* Bar Chart - Status Breakdown */}
-          <div>
-            <BarChart 
-              data={timeFilteredReports} 
-              title="Reports by Status"
-              type="status"
-            />
-          </div>
-        </div>
-        
-        {/* Additional Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Bar Chart - Severity Breakdown */}
-          <div>
-            <BarChart 
-              data={timeFilteredReports} 
-              title="Reports by Severity"
-              type="severity"
-            />
-          </div>
-          
-          {/* Bar Chart - Monthly Trends */}
-          <div>
-            <BarChart 
-              data={timeFilteredReports} 
-              title="Monthly Report Trends"
-              type="monthly"
-            />
-          </div>
-        </div>
+        {showAnalytics && (
+          <>
+            <h2 className="text-2xl font-bold text-black mb-6" style={{ 
+              fontSize: '2.5rem', 
+              fontWeight: '800', 
+              color: '#1e293b', 
+              letterSpacing: '-0.025em',
+              textTransform: 'uppercase'
+            }}>Crime Reports Analytics</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div>
+                <PieChart 
+                  data={timeFilteredReports} 
+                  title="Crime Type Distribution"
+                />
+              </div>
+
+              <div>
+                <BarChart 
+                  data={timeFilteredReports} 
+                  title="Reports by Status"
+                  type="status"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <BarChart 
+                  data={timeFilteredReports} 
+                  title="Reports by Severity"
+                  type="severity"
+                />
+              </div>
+
+              <div>
+                <BarChart 
+                  data={timeFilteredReports} 
+                  title="Monthly Report Trends"
+                  type="monthly"
+                />
+              </div>
+            </div>
+          </>
+        )}
       </section>
 
       {/* Threat Analysis Status */}
