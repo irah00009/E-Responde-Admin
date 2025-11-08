@@ -1084,6 +1084,14 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
     )
   }
 
+  const isSosAlert = alertType === 'sos'
+  const normalizedDescription = (reportData.description || '').toLowerCase()
+  const normalizedType = (reportData.type || '').toLowerCase()
+  const normalizedDeviceType = (reportData.deviceType || '').toLowerCase()
+  const isSosType = normalizedType.includes('sos')
+  const isSmartWatchReport = normalizedDescription.includes('smartwatch') || normalizedDescription.includes('smart watch') || normalizedDeviceType.includes('smart')
+  const shouldShowEvidenceSection = !isSosAlert && !isSosType && !isSmartWatchReport
+
   return (
     <>
     <div className="page-content">
@@ -1240,55 +1248,57 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
             </div>
           </div>
 
-          <div className="report-section">
-            <h2>Evidence Photos & Videos</h2>
-            {reportData.multimedia && reportData.multimedia.some(media => 
-              media.includes('file://') || media.includes('rn_image_picker') || media.includes('content://')
-            ) && (
-              <div style={{ 
-                background: '#fef3c7', 
-                border: '1px solid #f59e0b', 
-                borderRadius: '8px', 
-                padding: '1rem', 
-                marginBottom: '1rem',
-                color: '#92400e'
-              }}>
-                <strong>Mobile App Images:</strong> Some images were captured on mobile devices. The system is checking if they are stored as base64 data in the database or need to be retrieved from cloud storage.
-              </div>
-            )}
-            <div className="evidence-grid">
-              {/* Display Photos */}
-              {reportData.multimedia && reportData.multimedia.length > 0 && (
-                reportData.multimedia.map((media, index) => (
-                  <div key={`photo-${index}`} className="evidence-item">
-                    {getImageDisplayComponent(media, index)}
-                  </div>
-                ))
-              )}
-              
-              {/* Display Videos */}
-              {reportData.videos && reportData.videos.length > 0 && (
-                reportData.videos.map((videoUrl, index) => (
-                  <div key={`video-${index}`} className="evidence-item">
-                    {getVideoDisplayComponent(videoUrl, index)}
-                  </div>
-                ))
-              )}
-              
-              {/* Show no evidence message if neither photos nor videos exist */}
-              {(!reportData.multimedia || reportData.multimedia.length === 0) && 
-               (!reportData.videos || reportData.videos.length === 0) && (
-                <div className="no-evidence">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                    <polyline points="21,15 16,10 5,21"></polyline>
-                  </svg>
-                  <p>No evidence photos or videos available</p>
+           {shouldShowEvidenceSection && (
+            <div className="report-section">
+              <h2>Evidence Photos & Videos</h2>
+              {reportData.multimedia && reportData.multimedia.some(media => 
+                media.includes('file://') || media.includes('rn_image_picker') || media.includes('content://')
+              ) && (
+                <div style={{ 
+                  background: '#fef3c7', 
+                  border: '1px solid #f59e0b', 
+                  borderRadius: '8px', 
+                  padding: '1rem', 
+                  marginBottom: '1rem',
+                  color: '#92400e'
+                }}>
+                  <strong>Mobile App Images:</strong> Some images were captured on mobile devices. The system is checking if they are stored as base64 data in the database or need to be retrieved from cloud storage.
                 </div>
               )}
+              <div className="evidence-grid">
+                {/* Display Photos */}
+                {reportData.multimedia && reportData.multimedia.length > 0 && (
+                  reportData.multimedia.map((media, index) => (
+                    <div key={`photo-${index}`} className="evidence-item">
+                      {getImageDisplayComponent(media, index)}
+                    </div>
+                  ))
+                )}
+                
+                {/* Display Videos */}
+                {reportData.videos && reportData.videos.length > 0 && (
+                  reportData.videos.map((videoUrl, index) => (
+                    <div key={`video-${index}`} className="evidence-item">
+                      {getVideoDisplayComponent(videoUrl, index)}
+                    </div>
+                  ))
+                )}
+                
+                {/* Show no evidence message if neither photos nor videos exist */}
+                {(!reportData.multimedia || reportData.multimedia.length === 0) && 
+                 (!reportData.videos || reportData.videos.length === 0) && (
+                  <div className="no-evidence">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <polyline points="21,15 16,10 5,21"></polyline>
+                    </svg>
+                    <p>No evidence photos or videos available</p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Action buttons removed as requested */}
           {error && (

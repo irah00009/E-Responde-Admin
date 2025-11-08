@@ -454,20 +454,79 @@ const GlobalAlertManager = () => {
         }
       ];
 
+  const getSeverityStyles = () => {
+    const severity = (visibleAlert.severity || '').toString().toLowerCase();
+    const source = (visibleAlert.source || '').toString().toLowerCase();
+    const title = (visibleAlert.title || '').toString().toLowerCase();
+
+    const isImmediate =
+      severity === 'immediate' ||
+      source === 'sos' ||
+      title.includes('smart watch') ||
+      title.includes('sos');
+
+    if (isImmediate) {
+      return {
+        container: 'bg-[#ef4444]',
+        badge: 'bg-white/20 text-white',
+        foreground: 'text-white',
+        detailLabel: 'text-white/80',
+      };
+    }
+
+    if (severity === 'high') {
+      return {
+        container: 'bg-[#f97316]',
+        badge: 'bg-white/20 text-white',
+        foreground: 'text-white',
+        detailLabel: 'text-white/85',
+      };
+    }
+
+    if (severity === 'moderate' || severity === 'medium') {
+      return {
+        container: 'bg-[#facc15]',
+        badge: 'bg-black/10 text-black',
+        foreground: 'text-black',
+        detailLabel: 'text-black/70',
+      };
+    }
+
+    if (severity === 'low') {
+      return {
+        container: 'bg-[#22c55e]',
+        badge: 'bg-white/20 text-white',
+        foreground: 'text-white',
+        detailLabel: 'text-white/80',
+      };
+    }
+
+    return {
+      container: 'bg-status-danger text-white',
+      badge: 'bg-white/20 text-white',
+      foreground: 'text-white',
+      detailLabel: 'text-white/80',
+    };
+  };
+
+  const severityStyles = getSeverityStyles();
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center px-6 py-10 bg-black bg-opacity-50">
-      <div className="relative w-full max-w-4xl bg-status-danger text-white p-12 rounded-[2.5rem] shadow-[0_30px_60px_rgba(0,0,0,0.35)]">
+      <div
+        className={`relative w-full max-w-4xl p-12 rounded-[2.5rem] shadow-[0_30px_60px_rgba(0,0,0,0.35)] transition-colors duration-200 ${severityStyles.container}`}
+      >
         <div className="flex items-start gap-6">
-          <div className="w-20 h-20 bg-white bg-opacity-20 rounded-full flex items-center justify-center text-4xl font-extrabold">
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl font-extrabold ${severityStyles.badge}`}>
             !
           </div>
           <div className="flex-1">
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-              <h3 className="text-4xl font-black tracking-widest uppercase">
+              <h3 className={`text-4xl font-black tracking-widest uppercase ${severityStyles.foreground}`}>
                 {String(visibleAlert.title || 'New Alert').toUpperCase()}
               </h3>
               <button
-                className="text-sm font-semibold uppercase tracking-[0.3em] bg-white bg-opacity-20 px-4 py-2 rounded-full hover:bg-opacity-30 transition"
+                className="text-sm font-semibold uppercase tracking-[0.3em] bg-white/20 px-4 py-2 rounded-full hover:bg-white/30 transition text-white"
                 onClick={() => setAlarmEnabled((prev) => !prev)}
               >
                 {alarmEnabled ? 'Mute Siren' : 'Enable Siren'}
@@ -476,10 +535,10 @@ const GlobalAlertManager = () => {
             <div className="mt-6 space-y-6 text-xl leading-relaxed">
               {detailRows.map((detail, index) => (
                 <div key={`${detail?.label || 'detail'}-${index}`} className="flex flex-wrap justify-between gap-6">
-                  <span className="font-semibold uppercase tracking-[0.4em] text-white/80">
+                  <span className={`font-semibold uppercase tracking-[0.4em] ${severityStyles.detailLabel}`}>
                     {String(detail?.label || 'Detail').toUpperCase()}
                   </span>
-                  <span className={`${detail?.emphasize ? 'font-black text-4xl' : 'font-extrabold text-2xl'}`}>
+                  <span className={`${detail?.emphasize ? 'font-black text-4xl' : 'font-extrabold text-2xl'} ${severityStyles.foreground}`}>
                     {String(detail?.value ?? 'N/A')}
                   </span>
                 </div>

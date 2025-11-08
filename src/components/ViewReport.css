@@ -212,8 +212,30 @@
 
 .reporter-info {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 1rem;
+}
+
+.reporter-info .detail-item {
+  flex: 1 1 calc(50% - 0.5rem);
+  min-width: 220px;
+}
+
+.reporter-info .detail-item:nth-child(1) {
+  order: 1;
+}
+
+.reporter-info .detail-item:nth-child(3) {
+  order: 2;
+}
+
+.reporter-info .detail-item:nth-child(2) {
+  order: 3;
+  flex-basis: 100%;
+}
+
+.reporter-info .detail-item:nth-child(2) span {
+  word-break: break-all;
 }
 
 .description-content {
