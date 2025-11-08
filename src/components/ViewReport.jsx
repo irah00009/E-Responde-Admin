@@ -1085,8 +1085,12 @@ function ViewReport({ reportId, alertType, onBackToDashboard }) {
   }
 
   const isSosAlert = alertType === 'sos'
-  const isSosType = (reportData.type || '').toLowerCase().includes('sos')
-  const shouldShowEvidenceSection = !isSosAlert && !isSosType
+  const normalizedDescription = (reportData.description || '').toLowerCase()
+  const normalizedType = (reportData.type || '').toLowerCase()
+  const normalizedDeviceType = (reportData.deviceType || '').toLowerCase()
+  const isSosType = normalizedType.includes('sos')
+  const isSmartWatchReport = normalizedDescription.includes('smartwatch') || normalizedDescription.includes('smart watch') || normalizedDeviceType.includes('smart')
+  const shouldShowEvidenceSection = !isSosAlert && !isSosType && !isSmartWatchReport
 
   return (
     <>
