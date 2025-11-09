@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { realtimeDb, db as firestoreDb } from '../firebase'
+import { db, realtimeDb } from '../firebase'
 import { ref, get, onValue, off } from 'firebase/database'
 import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet'
@@ -96,8 +96,8 @@ function Analytics() {
   
   // Heatmap state variables
   const [reports, setReports] = useState([])
-  const [realtimeReports, setRealtimeReports] = useState([])
   const [firestoreReports, setFirestoreReports] = useState([])
+  const [realtimeReports, setRealtimeReports] = useState([])
   const [selectedCrimeTypeHeatmap, setSelectedCrimeTypeHeatmap] = useState('')
   const [timeRange, setTimeRange] = useState('30')
   const [intensity, setIntensity] = useState(5)
@@ -187,102 +187,77 @@ function Analytics() {
     }
   }
 
-  // Fetch crime trends
-  const fetchCrimeTrends = async () => {
-    try {
-      const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
-      const snapshot = await get(reportsRef)
-      
-      if (snapshot.exists()) {
-        const reportsData = snapshot.val()
-        const trends = {}
-        
-        Object.values(reportsData).forEach(report => {
-          // Normalize crime type
-          let crimeType = (report.crimeType || report.type || report.crime_type || 'Unknown').trim()
-          if (crimeType === 'Others' || crimeType === 'Emergency SOS') {
-            crimeType = 'Other'
-          }
-          
-          // Try multiple date fields
-          const dateStr = report.dateTime || report.createdAt || report.timestamp || report.date
-          if (!dateStr) return
-          
-          try {
-            const date = new Date(dateStr)
-            if (isNaN(date.getTime())) {
-              console.warn('Invalid date for report:', report.id, dateStr)
-              return
-            }
-            
-            const month = date.toISOString().substring(0, 7)
-            
-            if (!trends[month]) {
-              trends[month] = {}
-            }
-            if (!trends[month][crimeType]) {
-              trends[month][crimeType] = 0
-            }
-            trends[month][crimeType]++
-          } catch (dateErr) {
-            console.warn('Error parsing date for report:', report.id, dateStr, dateErr)
-            return
-          }
-        })
-        
-        const trendArray = Object.keys(trends).map(month => ({
-          month,
-          data: trends[month]
-        })).sort((a, b) => a.month.localeCompare(b.month))
-        
-        setCrimeTrends(trendArray)
-        console.log(`✅ Loaded ${trendArray.length} months of crime trends`)
-      } else {
-        console.warn('⚠️ No crime reports found for trends')
-        setCrimeTrends([])
-      }
-    } catch (err) {
-      console.error('❌ Error fetching crime trends:', err)
-      setError(err.message)
+  // Compile crime trends from provided reports
+  const fetchCrimeTrends = (reportsArray) => {
+    if (!Array.isArray(reportsArray) || reportsArray.length === 0) {
+      setCrimeTrends([])
+      return
     }
+
+    const trends = {}
+
+    reportsArray.forEach(report => {
+      let crimeType = (report.crimeType || report.type || report.crime_type || 'Unknown').trim()
+      if (crimeType === 'Others' || crimeType === 'Emergency SOS') {
+        crimeType = 'Other'
+      }
+
+      const dateValue = parseTimestamp(report.createdAt || report.dateTime || report.timestamp || report.date)
+      if (!dateValue) return
+
+      const month = dateValue.toISOString().substring(0, 7)
+
+      if (!trends[month]) {
+        trends[month] = {}
+      }
+      if (!trends[month][crimeType]) {
+        trends[month][crimeType] = 0
+      }
+      trends[month][crimeType]++
+    })
+
+    const trendArray = Object.keys(trends).map(month => ({
+      month,
+      data: trends[month]
+    })).sort((a, b) => a.month.localeCompare(b.month))
+
+    setCrimeTrends(trendArray)
+    console.log(`✅ Loaded ${trendArray.length} months of crime trends`)
   }
 
-  // Calculate response metrics
-  const calculateResponseMetrics = async () => {
-    try {
-      const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
-      const snapshot = await get(reportsRef)
-      
-      if (snapshot.exists()) {
-        const reportsData = snapshot.val()
-        const reports = Object.values(reportsData)
-        
-        const resolvedReports = reports.filter(report => report.status === 'Resolved')
-        const totalReports = reports.length
-        
-        // Calculate average response time (simplified)
-        const responseTimes = resolvedReports.map(report => {
-          const createdAt = new Date(report.dateTime || report.createdAt)
-          const resolvedAt = new Date(report.resolvedAt || new Date())
-          return (resolvedAt - createdAt) / (1000 * 60) // minutes
-        })
-        
-        const averageResponseTime = responseTimes.length > 0 
-          ? responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length 
-          : 0
-        
-        const resolutionRate = totalReports > 0 ? (resolvedReports.length / totalReports) * 100 : 0
-        const dispatchEfficiency = totalReports > 0 ? (reports.filter(r => r.status === 'Dispatched').length / totalReports) * 100 : 0
-        
-        setResponseMetrics({
-          averageResponseTime: Math.round(averageResponseTime * 10) / 10,
-          dispatchEfficiency: Math.round(dispatchEfficiency * 10) / 10,
-          resolutionRate: Math.round(resolutionRate * 10) / 10
-        })
-      }
-    } catch (err) {
-      console.error('Error calculating response metrics:', err)
+  // Calculate response metrics from combined reports
+  const calculateResponseMetrics = (reportsArray) => {
+    if (!Array.isArray(reportsArray) || reportsArray.length === 0) {
+      setResponseMetrics({
+        averageResponseTime: 0,
+        dispatchEfficiency: 0,
+        resolutionRate: 0
+      })
+      return
     }
+
+    const resolvedReports = reportsArray.filter(report => report.status === 'Resolved')
+    const totalReports = reportsArray.length
+
+    const responseTimes = resolvedReports.map(report => {
+      const createdAt = parseTimestamp(report.dateTime || report.createdAt)
+      const resolvedAt = parseTimestamp(report.resolvedAt) || new Date()
+      if (!createdAt || !resolvedAt) return 0
+      return (resolvedAt.getTime() - createdAt.getTime()) / (1000 * 60)
+    }).filter(time => Number.isFinite(time) && time >= 0)
+
+    const averageResponseTime = responseTimes.length > 0
+      ? responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
+      : 0
+
+    const resolutionRate = totalReports > 0 ? (resolvedReports.length / totalReports) * 100 : 0
+    const dispatchEfficiency = totalReports > 0 ? (reportsArray.filter(r => r.status === 'Dispatched').length / totalReports) * 100 : 0
+
+    setResponseMetrics({
+      averageResponseTime: Math.round(averageResponseTime * 10) / 10,
+      dispatchEfficiency: Math.round(dispatchEfficiency * 10) / 10,
+      resolutionRate: Math.round(resolutionRate * 10) / 10
+    })
   }
 
   // Heatmap data processing functions
@@ -486,6 +461,83 @@ function Analytics() {
   ]
 
 
+  const parseTimestamp = (value) => {
+    if (!value) return null
+    if (value instanceof Date) return value
+    if (typeof value?.toDate === 'function') return value.toDate()
+    if (typeof value === 'number') return new Date(value)
+    const parsed = new Date(value)
+    return isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  const normalizeFirestoreReport = (doc) => {
+    const data = doc.data()
+    return {
+      id: doc.id,
+      ...data,
+      source: 'firestore',
+      location: data.location || {
+        latitude: data.latitude || data.lat,
+        longitude: data.longitude || data.lng,
+        address: data.address || data.location_address || 'Unknown location'
+      },
+      createdAt: parseTimestamp(data.createdAt || data.dateTime || data.timestamp || data.date) || null
+    }
+  }
+
+  const normalizeRealtimeReport = (key, data) => {
+    return {
+      id: key,
+      ...data,
+      source: 'realtime',
+      location: data.location || {
+        latitude: data.latitude || data.lat,
+        longitude: data.longitude || data.lng,
+        address: data.address || data.location_address || 'Unknown location'
+      },
+      createdAt: parseTimestamp(data.createdAt || data.dateTime || data.timestamp || data.date) || null
+    }
+  }
+
+  const getReportKey = (report, fallbackSource = 'unknown') => {
+    const primaryId = report.id
+      || report.reportId
+      || report.reportID
+      || report.report_id
+      || report.crimeId
+      || report.caseId
+      || report.caseNumber
+      || report.referenceNumber
+      || report.trackingNumber
+
+    if (primaryId) {
+      return String(primaryId)
+    }
+
+    const date = parseTimestamp(report.createdAt || report.dateTime || report.timestamp || report.date)
+    const timestamp = date ? date.getTime() : 'no-timestamp'
+    const latitude = report.location?.latitude || report.latitude || report.lat || 'no-lat'
+    const longitude = report.location?.longitude || report.longitude || report.lng || 'no-lng'
+
+    return `${fallbackSource}-${timestamp}-${latitude}-${longitude}`
+  }
+
+  const mergeReports = (firestoreList, realtimeList) => {
+    const merged = new Map()
+
+    firestoreList.forEach(report => {
+      const key = getReportKey(report, 'firestore')
+      merged.set(key, report)
+    })
+
+    realtimeList.forEach(report => {
+      const key = getReportKey(report, 'realtime')
+      merged.set(key, report)
+    })
+
+    return Array.from(merged.values())
+  }
+
   // Extract unique crime types from reports
   const extractCrimeTypes = (reportsArray) => {
     const crimeTypes = new Set()
@@ -515,7 +567,7 @@ function Analytics() {
     try {
       const [realtimeSnapshot, firestoreSnapshot] = await Promise.all([
         get(ref(realtimeDb, 'civilian/civilian crime reports')),
-        getDocs(collection(firestoreDb, 'crime_reports'))
+        getDocs(collection(db, 'crime_reports'))
       ])
 
       let realtimeArray = []
@@ -543,7 +595,48 @@ function Analytics() {
       setFirestoreReports(firestoreArray)
       console.log(`Loaded ${realtimeArray.length} realtime reports and ${firestoreArray.length} firestore reports for heatmap`)
     } catch (err) {
-      console.error('Error fetching heatmap data:', err)
+      console.error('Error loading heatmap data:', err)
+    }
+  }
+
+  const fetchFirestoreReports = async () => {
+    try {
+      const reportsRef = collection(db, 'crime_reports')
+      const snapshot = await getDocs(reportsRef)
+
+      if (snapshot.empty) {
+        setFirestoreReports([])
+        console.warn('⚠️ No crime reports found in Firestore')
+        return
+      }
+
+      const reportsArray = snapshot.docs.map(normalizeFirestoreReport)
+      setFirestoreReports(reportsArray)
+      setLastUpdate(new Date())
+      console.log(`Loaded ${reportsArray.length} reports from Firestore`)
+    } catch (err) {
+      console.error('Error fetching Firestore crime reports:', err)
+    }
+  }
+
+  const fetchInitialRealtimeReports = async () => {
+    try {
+      const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
+      const snapshot = await get(reportsRef)
+
+      if (!snapshot.exists()) {
+        setRealtimeReports([])
+        console.warn('⚠️ No crime reports found in Realtime Database')
+        return
+      }
+
+      const reportsData = snapshot.val()
+      const reportsArray = Object.entries(reportsData).map(([key, data]) => normalizeRealtimeReport(key, data))
+      setRealtimeReports(reportsArray)
+      setLastUpdate(new Date())
+      console.log(`Loaded ${reportsArray.length} reports from Realtime Database`)
+    } catch (err) {
+      console.error('Error fetching realtime crime reports:', err)
     }
   }
 
@@ -564,52 +657,38 @@ function Analytics() {
     const initializeData = async () => {
       fetchSystemMetrics()
       fetchUserEngagement()
-      fetchCrimeTrends()
-      calculateResponseMetrics()
-      
-      // Fetch heatmap data
-      fetchHeatmapData()
+      fetchFirestoreReports()
+      fetchInitialRealtimeReports()
     }
     
     initializeData()
     
     // Set up real-time listeners
     const reportsRef = ref(realtimeDb, 'civilian/civilian crime reports')
-    const firestoreRef = collection(firestoreDb, 'crime_reports')
+    const firestoreRef = collection(db, 'crime_reports')
     const callsRef = ref(realtimeDb, 'voip_calls')
     const alertsRef = ref(realtimeDb, 'sos_alerts')
     
     const unsubscribeRealtimeReports = onValue(reportsRef, (snapshot) => {
       fetchSystemMetrics()
-      calculateResponseMetrics()
-      
-       // Update heatmap data in real-time
-       if (snapshot.exists()) {
-         const reportsData = snapshot.val()
-         const reportsArray = Object.entries(reportsData).map(([key, data]) => ({
-           id: key,
-           source: 'realtime',
-           ...data,
-           location: normalizeLocation(data.location || data)
-         }))
-         setRealtimeReports(reportsArray)
-         console.log(`Real-time heatmap update (Realtime DB): ${reportsArray.length} reports`)
-       } else {
-         setRealtimeReports([])
-       }
+
+      if (snapshot.exists()) {
+        const reportsData = snapshot.val()
+        const reportsArray = Object.entries(reportsData).map(([key, data]) => normalizeRealtimeReport(key, data))
+
+        setRealtimeReports(reportsArray)
+        setLastUpdate(new Date())
+        calculateResponseMetrics(reportsArray)
+        console.log(`Real-time RTDB update: ${reportsArray.length} reports`)
+      } else {
+        setRealtimeReports([])
+      }
     })
 
     const unsubscribeFirestore = onSnapshot(firestoreRef, (snapshot) => {
-      const firestoreArray = snapshot.docs.map(doc => {
-        const data = doc.data() || {}
-        return {
-          id: doc.id,
-          source: 'firestore',
-          ...data,
-          location: normalizeLocation(data.location || data)
-        }
-      })
+      const firestoreArray = snapshot.docs.map(normalizeFirestoreReport)
       setFirestoreReports(firestoreArray)
+      setLastUpdate(new Date())
       console.log(`Real-time heatmap update (Firestore): ${firestoreArray.length} reports`)
     })
     
@@ -628,6 +707,37 @@ function Analytics() {
       off(alertsRef, 'value', unsubscribeAlerts)
     }
   }, [])
+
+
+
+  useEffect(() => {
+    const reportsCollection = collection(db, 'crime_reports')
+
+    const unsubscribe = onSnapshot(reportsCollection, snapshot => {
+      if (snapshot.empty) {
+        setFirestoreReports([])
+        return
+      }
+
+      const reportsArray = snapshot.docs.map(normalizeFirestoreReport)
+      setFirestoreReports(reportsArray)
+      setLastUpdate(new Date())
+    }, (err) => {
+      console.error('Error listening to Firestore crime reports:', err)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+
+
+  useEffect(() => {
+    const mergedReports = mergeReports(firestoreReports, realtimeReports)
+    setReports(mergedReports)
+    setAvailableCrimeTypes(extractCrimeTypes(mergedReports))
+    fetchCrimeTrends(mergedReports)
+    calculateResponseMetrics(mergedReports)
+  }, [firestoreReports, realtimeReports])
 
 
 
@@ -1000,4 +1110,5 @@ function Analytics() {
 }
 
 export default Analytics
+
 
