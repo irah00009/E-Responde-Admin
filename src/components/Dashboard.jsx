@@ -25,38 +25,72 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
   const [error, setError] = useState(null);
   const [highlightedReportId, setHighlightedReportId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null);
-  const [timeFilter, setTimeFilter] = useState('all');
+  const [timeFilter, setTimeFilter] = useState('week');
   const [showAnalytics, setShowAnalytics] = useState(() => searchParams.get('analytics') === 'show');
-  const timeFilterOptions = [
-    { value: 'today', label: 'Today' },
-    { value: 'week', label: 'This Week' },
-    { value: 'month', label: 'This Month' },
-    { value: 'all', label: 'All Time' }
-  ];
-  
-  const timeFilterStart = useMemo(() => {
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showCustomInputs, setShowCustomInputs] = useState(false);
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
+  const [customDraft, setCustomDraft] = useState({ start: '', end: '' });
+  const [customError, setCustomError] = useState('');
+  const filterMenuRef = useRef(null);
+
+  const filterLabels = {
+    today: 'Today',
+    yesterday: 'Yesterday',
+    week: 'This Week',
+    month: 'This Month',
+    custom: 'Custom Range'
+  };
+
+  const formatDateForLabel = useCallback((value) => {
+    if (!value) return '';
+    const date = new Date(value + 'T00:00:00');
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    });
+  }, []);
+
+  const timeFilterRange = useMemo(() => {
     const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     switch (timeFilter) {
-      case 'today': {
-        return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      case 'today':
+        return { start: startOfToday.getTime(), end: now.getTime() };
+      case 'yesterday': {
+        const startYesterday = new Date(startOfToday);
+        startYesterday.setDate(startYesterday.getDate() - 1);
+        const endYesterday = new Date(startOfToday.getTime() - 1);
+        return { start: startYesterday.getTime(), end: endYesterday.getTime() };
       }
       case 'week': {
-        const startOfRange = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        startOfRange.setDate(startOfRange.getDate() - 7);
-        return startOfRange.getTime();
+        const startWeek = new Date(startOfToday);
+        startWeek.setDate(startWeek.getDate() - 7);
+        return { start: startWeek.getTime(), end: now.getTime() };
       }
       case 'month': {
-        const startOfRange = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        startOfRange.setMonth(startOfRange.getMonth() - 1);
-        return startOfRange.getTime();
+        const startMonth = new Date(startOfToday);
+        startMonth.setDate(1);
+        return { start: startMonth.getTime(), end: now.getTime() };
+      }
+      case 'custom': {
+        if (customRange.start && customRange.end) {
+          const start = new Date(customRange.start + 'T00:00:00').getTime();
+          const end = new Date(customRange.end + 'T23:59:59.999').getTime();
+          if (Number.isFinite(start) && Number.isFinite(end) && start <= end) {
+            return { start, end };
+          }
+        }
+        return null;
       }
       default:
         return null;
     }
-  }, [timeFilter]);
-  
+  }, [timeFilter, customRange]);
+
   const isWithinTimeFilter = useCallback((dateValue) => {
-    if (timeFilter === 'all') {
+    if (!timeFilterRange) {
       return true;
     }
     if (!dateValue) {
@@ -66,8 +100,88 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
     if (!Number.isFinite(timestamp)) {
       return false;
     }
-    return timestamp >= (timeFilterStart ?? 0);
-  }, [timeFilter, timeFilterStart]);
+    if (timeFilterRange.start != null && timestamp < timeFilterRange.start) {
+      return false;
+    }
+    if (timeFilterRange.end != null && timestamp > timeFilterRange.end) {
+      return false;
+    }
+    return true;
+  }, [timeFilterRange]);
+
+  const currentFilterLabel = useMemo(() => {
+    if (timeFilter === 'custom' && customRange.start && customRange.end) {
+      return `${formatDateForLabel(customRange.start)} – ${formatDateForLabel(customRange.end)}`;
+    }
+    return filterLabels[timeFilter] || 'Select Range';
+  }, [timeFilter, customRange, formatDateForLabel]);
+
+  useEffect(() => {
+    if (!showFilterMenu) return;
+
+    const handleClickOutside = (event) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
+        setShowFilterMenu(false);
+        setShowCustomInputs(false);
+        setCustomError('');
+      }
+    };
+
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') {
+        setShowFilterMenu(false);
+        setShowCustomInputs(false);
+        setCustomError('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [showFilterMenu]);
+
+  const handleFilterSelect = (value) => {
+    setTimeFilter(value);
+    setShowFilterMenu(false);
+    setShowCustomInputs(false);
+    setCustomError('');
+  };
+
+  const handleCustomSelect = () => {
+    setShowCustomInputs(true);
+    setCustomError('');
+    setCustomDraft({
+      start: customRange.start || '',
+      end: customRange.end || ''
+    });
+  };
+
+  const handleApplyCustomRange = () => {
+    if (!customDraft.start || !customDraft.end) {
+      setCustomError('Please select both start and end dates.');
+      return;
+    }
+
+    if (new Date(customDraft.start) > new Date(customDraft.end)) {
+      setCustomError('Start date cannot be after end date.');
+      return;
+    }
+
+    setCustomRange({ start: customDraft.start, end: customDraft.end });
+    setTimeFilter('custom');
+    setShowCustomInputs(false);
+    setShowFilterMenu(false);
+    setCustomError('');
+  };
+
+  const handleCancelCustomRange = () => {
+    setShowCustomInputs(false);
+    setCustomError('');
+  };
   
   const timeFilteredReports = useMemo(() => {
     return recentSubmissions.filter(report => isWithinTimeFilter(report.date));
@@ -1349,48 +1463,127 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
             letterSpacing: '-0.025em',
             textTransform: 'uppercase'
           }}>Report Overview</h2>
-          <div className="time-filter-wrapper">
+        <div className="time-filter-wrapper">
+          <button
+            type="button"
+            className="time-filter-icon"
+            onClick={onNavigateToFirestoreReports}
+            aria-label="Open realtime case resolved reports"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l1.2 2.4c.176.353.538.6.94.6H18.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
+              <path d="M3 8h18" />
+            </svg>
+          </button>
+          <div className="time-filter-dropdown" ref={filterMenuRef}>
             <button
               type="button"
-              className="time-filter-icon"
-              onClick={onNavigateToFirestoreReports}
-              aria-label="Open realtime case resolved reports"
+              className="time-filter-button"
+              onClick={() => setShowFilterMenu(prev => !prev)}
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l1.2 2.4c.176.353.538.6.94.6H18.5A2.5 2.5 0 0 1 21 10.5v7A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-10Z" />
-                <path d="M3 8h18" />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 5h16" />
+                <path d="M7 12h10" />
+                <path d="M10 19h4" />
               </svg>
+              <span>{currentFilterLabel}</span>
             </button>
-            <select
-              className="time-filter-select"
-              value={timeFilter}
-              onChange={(event) => setTimeFilter(event.target.value)}
-            >
-              {timeFilterOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className={`analytics-toggle-btn ${showAnalytics ? 'analytics-toggle-btn--active' : ''}`}
-              onClick={() => setShowAnalytics(prev => !prev)}
-              aria-label={showAnalytics ? 'Hide analytics' : 'Show analytics'}
-            >
-              <span className="analytics-toggle-indicator" />
-              <span className="analytics-toggle-text">
-                {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
-              </span>
-            </button>
+            {showFilterMenu && (
+              <div className="time-filter-menu">
+                <button
+                  type="button"
+                  className={timeFilter === 'today' ? 'active' : ''}
+                  onClick={() => handleFilterSelect('today')}
+                >
+                  <span>Today</span>
+                </button>
+                <button
+                  type="button"
+                  className={timeFilter === 'yesterday' ? 'active' : ''}
+                  onClick={() => handleFilterSelect('yesterday')}
+                >
+                  <span>Yesterday</span>
+                </button>
+                <button
+                  type="button"
+                  className={timeFilter === 'week' ? 'active' : ''}
+                  onClick={() => handleFilterSelect('week')}
+                >
+                  <span>This Week</span>
+                </button>
+                <button
+                  type="button"
+                  className={timeFilter === 'month' ? 'active' : ''}
+                  onClick={() => handleFilterSelect('month')}
+                >
+                  <span>This Month</span>
+                </button>
+                <div className="time-filter-menu-divider" />
+                {showCustomInputs ? (
+                  <div className="custom-range-inputs">
+                    <label>
+                      <span>Start</span>
+                      <input
+                        type="date"
+                        value={customDraft.start}
+                        onChange={(event) =>
+                          setCustomDraft(prev => ({ ...prev, start: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>End</span>
+                      <input
+                        type="date"
+                        value={customDraft.end}
+                        onChange={(event) =>
+                          setCustomDraft(prev => ({ ...prev, end: event.target.value }))
+                        }
+                      />
+                    </label>
+                    {customError && (
+                      <p className="custom-range-error">{customError}</p>
+                    )}
+                    <div className="custom-range-actions">
+                      <button type="button" className="cancel-btn" onClick={handleCancelCustomRange}>
+                        Cancel
+                      </button>
+                      <button type="button" className="apply-btn" onClick={handleApplyCustomRange}>
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className={timeFilter === 'custom' ? 'active' : ''}
+                    onClick={handleCustomSelect}
+                  >
+                    <span>Custom Date Range</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+          <button
+            type="button"
+            className={`analytics-toggle-btn ${showAnalytics ? 'analytics-toggle-btn--active' : ''}`}
+            onClick={() => setShowAnalytics(prev => !prev)}
+            aria-label={showAnalytics ? 'Hide analytics' : 'Show analytics'}
+          >
+            <span className="analytics-toggle-indicator" />
+            <span className="analytics-toggle-text">
+              {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
+            </span>
+          </button>
+        </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <div 

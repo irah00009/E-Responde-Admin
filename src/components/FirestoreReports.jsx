@@ -1,23 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { db as firestoreDb } from '../firebase'
 import './FirestoreReports.css'
-
-const monthNames = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December'
-]
 
 const formatDate = (dateString) => {
   if (!dateString) return 'Unknown date'
@@ -110,10 +95,32 @@ const FirestoreReports = () => {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [monthFilter, setMonthFilter] = useState('all')
-  const [yearFilter, setYearFilter] = useState('all')
+  const [timeFilter, setTimeFilter] = useState('week')
+  const [showFilterMenu, setShowFilterMenu] = useState(false)
+  const [showCustomInputs, setShowCustomInputs] = useState(false)
+  const [customRange, setCustomRange] = useState({ start: '', end: '' })
+  const [customDraft, setCustomDraft] = useState({ start: '', end: '' })
+  const [customError, setCustomError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedReport, setSelectedReport] = useState(null)
+  const filterMenuRef = useRef(null)
+
+  const filterLabels = useMemo(() => ({
+    today: 'Today',
+    yesterday: 'Yesterday',
+    week: 'This Week',
+    month: 'This Month',
+    custom: 'Custom Range'
+  }), [])
+
+  const formatDateForLabel = useCallback((value) => {
+    if (!value) return ''
+    const date = new Date(value + 'T00:00:00')
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
+    })
+  }, [])
 
   useEffect(() => {
     const reportsCollection = collection(firestoreDb, 'crime_reports')
@@ -175,20 +182,154 @@ const FirestoreReports = () => {
     })
   }, [reports])
 
-  const availableYears = useMemo(() => {
-    const years = new Set()
-    reports.forEach(report => {
-      if (!report.date) return
-      const date = new Date(report.date)
-      if (!Number.isNaN(date.getTime())) {
-        years.add(date.getFullYear())
-      }
-    })
+  const timeFilterRange = useMemo(() => {
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-    return Array.from(years)
-      .sort((a, b) => b - a)
-      .map(year => String(year))
-  }, [reports])
+    switch (timeFilter) {
+      case 'today':
+        return {
+          start: startOfToday.getTime(),
+          end: now.getTime()
+        }
+      case 'yesterday': {
+        const startYesterday = new Date(startOfToday)
+        startYesterday.setDate(startYesterday.getDate() - 1)
+        const endYesterday = new Date(startOfToday.getTime() - 1)
+        return {
+          start: startYesterday.getTime(),
+          end: endYesterday.getTime()
+        }
+      }
+      case 'week': {
+        const startWeek = new Date(startOfToday)
+        startWeek.setDate(startWeek.getDate() - 7)
+        return {
+          start: startWeek.getTime(),
+          end: now.getTime()
+        }
+      }
+      case 'month': {
+        const startMonth = new Date(startOfToday)
+        startMonth.setDate(1)
+        return {
+          start: startMonth.getTime(),
+          end: now.getTime()
+        }
+      }
+      case 'custom': {
+        if (customRange.start && customRange.end) {
+          const start = new Date(customRange.start + 'T00:00:00').getTime()
+          const end = new Date(customRange.end + 'T23:59:59.999').getTime()
+          if (Number.isFinite(start) && Number.isFinite(end) && start <= end) {
+            return { start, end }
+          }
+        }
+        return null
+      }
+      default:
+        return null
+    }
+  }, [timeFilter, customRange])
+
+  const isWithinTimeFilter = useCallback((reportDate) => {
+    if (!timeFilterRange) {
+      return true
+    }
+
+    if (!reportDate) {
+      return false
+    }
+
+    const timestamp = new Date(reportDate).getTime()
+    if (!Number.isFinite(timestamp)) {
+      return false
+    }
+
+    if (timeFilterRange.start != null && timestamp < timeFilterRange.start) {
+      return false
+    }
+
+    if (timeFilterRange.end != null && timestamp > timeFilterRange.end) {
+      return false
+    }
+
+    return true
+  }, [timeFilterRange])
+
+  const currentFilterLabel = useMemo(() => {
+    if (timeFilter === 'custom' && customRange.start && customRange.end) {
+      return `${formatDateForLabel(customRange.start)} – ${formatDateForLabel(customRange.end)}`
+    }
+    return filterLabels[timeFilter] || 'Select Range'
+  }, [timeFilter, customRange, filterLabels, formatDateForLabel])
+
+  useEffect(() => {
+    if (!showFilterMenu) return
+
+    const handleClickOutside = (event) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
+        setShowFilterMenu(false)
+        setShowCustomInputs(false)
+        setCustomError('')
+      }
+    }
+
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') {
+        setShowFilterMenu(false)
+        setShowCustomInputs(false)
+        setCustomError('')
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEsc)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEsc)
+    }
+  }, [showFilterMenu])
+
+  const handleFilterSelect = (value) => {
+    setTimeFilter(value)
+    setShowFilterMenu(false)
+    setShowCustomInputs(false)
+    setCustomError('')
+  }
+
+  const handleCustomSelect = () => {
+    setShowCustomInputs(true)
+    setCustomError('')
+    setCustomDraft({
+      start: customRange.start || '',
+      end: customRange.end || ''
+    })
+  }
+
+  const handleApplyCustomRange = () => {
+    if (!customDraft.start || !customDraft.end) {
+      setCustomError('Please select both start and end dates.')
+      return
+    }
+
+    if (new Date(customDraft.start) > new Date(customDraft.end)) {
+      setCustomError('Start date cannot be after end date.')
+      return
+    }
+
+    setCustomRange({ start: customDraft.start, end: customDraft.end })
+    setTimeFilter('custom')
+    setShowCustomInputs(false)
+    setShowFilterMenu(false)
+    setCustomError('')
+  }
+
+  const handleCancelCustomRange = () => {
+    setShowCustomInputs(false)
+    setCustomError('')
+  }
 
   const filteredReports = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -212,24 +353,9 @@ const FirestoreReports = () => {
 
       if (!matchesSearch) return false
 
-      if (!report.date) {
-        return monthFilter === 'all' && yearFilter === 'all'
-      }
-
-      const date = new Date(report.date)
-      if (Number.isNaN(date.getTime())) {
-        return monthFilter === 'all' && yearFilter === 'all'
-      }
-
-      const reportMonth = String(date.getMonth())
-      const reportYear = String(date.getFullYear())
-
-      const monthMatches = monthFilter === 'all' || reportMonth === monthFilter
-      const yearMatches = yearFilter === 'all' || reportYear === yearFilter
-
-      return monthMatches && yearMatches
+      return isWithinTimeFilter(report.date)
     })
-  }, [sortedReports, monthFilter, yearFilter, searchQuery])
+  }, [sortedReports, searchQuery, isWithinTimeFilter])
 
   const groupedReports = useMemo(() => {
     const groups = new Map()
@@ -297,27 +423,91 @@ const FirestoreReports = () => {
                 )}
               </div>
             </div>
-            <div className="firestore-filters">
-              <label className="firestore-filter">
-                <span>Month</span>
-                <select value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
-                  <option value="all">All</option>
-                  {monthNames.map((name, index) => (
-                    <option key={index} value={String(index)}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="firestore-filter">
-                <span>Year</span>
-                <select value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
-                  <option value="all">All</option>
-                  {availableYears.map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-              </label>
+            <div className="firestore-filter-dropdown" ref={filterMenuRef}>
+              <button
+                type="button"
+                className="firestore-filter-button"
+                onClick={() => setShowFilterMenu(prev => !prev)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 5h16" />
+                  <path d="M7 12h10" />
+                  <path d="M10 19h4" />
+                </svg>
+                <span>{currentFilterLabel}</span>
+              </button>
+              {showFilterMenu && (
+                <div className="firestore-filter-menu">
+                  <button
+                    type="button"
+                    className={timeFilter === 'today' ? 'active' : ''}
+                    onClick={() => handleFilterSelect('today')}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    className={timeFilter === 'yesterday' ? 'active' : ''}
+                    onClick={() => handleFilterSelect('yesterday')}
+                  >
+                    Yesterday
+                  </button>
+                  <button
+                    type="button"
+                    className={timeFilter === 'week' ? 'active' : ''}
+                    onClick={() => handleFilterSelect('week')}
+                  >
+                    This Week
+                  </button>
+                  <button
+                    type="button"
+                    className={timeFilter === 'month' ? 'active' : ''}
+                    onClick={() => handleFilterSelect('month')}
+                  >
+                    This Month
+                  </button>
+                  <div className="firestore-filter-divider" />
+                  {showCustomInputs ? (
+                    <div className="firestore-custom-range">
+                      <label>
+                        <span>Start</span>
+                        <input
+                          type="date"
+                          value={customDraft.start}
+                          onChange={(event) => setCustomDraft(prev => ({ ...prev, start: event.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        <span>End</span>
+                        <input
+                          type="date"
+                          value={customDraft.end}
+                          onChange={(event) => setCustomDraft(prev => ({ ...prev, end: event.target.value }))}
+                        />
+                      </label>
+                      {customError && (
+                        <p className="firestore-custom-error">{customError}</p>
+                      )}
+                      <div className="firestore-custom-actions">
+                        <button type="button" className="cancel" onClick={handleCancelCustomRange}>
+                          Cancel
+                        </button>
+                        <button type="button" className="apply" onClick={handleApplyCustomRange}>
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={timeFilter === 'custom' ? 'active' : ''}
+                      onClick={handleCustomSelect}
+                    >
+                      Custom Date Range
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <button className="firestore-button secondary" onClick={() => navigate(-1)}>
