@@ -29,8 +29,8 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
   const [showAnalytics, setShowAnalytics] = useState(() => searchParams.get('analytics') === 'show');
   const timeFilterOptions = [
     { value: 'today', label: 'Today' },
-    { value: 'week', label: 'Weekly' },
-    { value: 'month', label: 'Monthly' },
+    { value: 'week', label: 'This Week' },
+    { value: 'month', label: 'This Month' },
     { value: 'all', label: 'All Time' }
   ];
   
