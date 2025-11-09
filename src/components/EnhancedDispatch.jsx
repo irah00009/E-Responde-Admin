@@ -16,7 +16,7 @@ function EnhancedDispatch() {
     averageResponseTime: 0
   })
   const [liveTracking, setLiveTracking] = useState({})
-  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('received')
   const [showActiveOfficersModal, setShowActiveOfficersModal] = useState(false)
   const [showAvailableOfficersModal, setShowAvailableOfficersModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
@@ -809,44 +809,26 @@ function EnhancedDispatch() {
   }
 
   const filteredReports = reports.filter(report => {
-    if (filterStatus === 'all') {
-      return true // Show all reports when "All Status" is selected
-    }
-    
     const reportStatus = report.status?.toLowerCase() || ''
     const filterValue = filterStatus.toLowerCase()
-    
-    // Handle different status variations with comprehensive matching
+
     switch (filterValue) {
-      case 'pending':
-        return reportStatus === 'pending' || 
-               reportStatus === 'under review' || 
-               reportStatus === 'new' ||
-               reportStatus === 'unassigned'
-      
       case 'received':
-        return reportStatus === 'received' || 
+        return reportStatus === 'received' ||
                reportStatus === 'acknowledged'
-      
+
       case 'in progress':
-        return reportStatus === 'in progress' || 
+        return reportStatus === 'in progress' ||
                reportStatus === 'in-progress' ||
                reportStatus === 'processing' ||
                reportStatus === 'investigating'
-      
+
       case 'dispatched':
-        return reportStatus === 'dispatched' || 
+        return reportStatus === 'dispatched' ||
                reportStatus === 'assigned' ||
                reportStatus === 'en route'
-      
-      case 'resolved':
-        return reportStatus === 'resolved' || 
-               reportStatus === 'case resolved' ||
-               reportStatus === 'completed' ||
-               reportStatus === 'closed'
-      
+
       default:
-        // Fallback to exact match
         return reportStatus === filterValue
     }
   })
@@ -940,12 +922,9 @@ function EnhancedDispatch() {
             onChange={(e) => setFilterStatus(e.target.value)}
             className="filter-select"
           >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
             <option value="received">Received</option>
             <option value="in progress">In Progress</option>
             <option value="dispatched">Dispatched</option>
-            <option value="resolved">Resolved</option>
           </select>
         </div>
         
