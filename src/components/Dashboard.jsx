@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getDatabase, ref, onValue, off, update, get, push, set } from 'firebase/database'
-import { app, iceServers } from '../firebase'
+import { collection, onSnapshot } from 'firebase/firestore'
+import { app, db, iceServers } from '../firebase'
 import { useAuth } from '../providers/AuthProvider'
 import StatusTag from './StatusTag'
 import MLThreatDetectionService from '../services/mlThreatDetection.js'
@@ -20,6 +21,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
   const [currentPageSmartWatch, setCurrentPageSmartWatch] = useState(1);
   const [recentSubmissions, setRecentSubmissions] = useState([]);
   const [smartWatchSOSAlerts, setSmartWatchSOSAlerts] = useState([]);
+  const [firestoreReports, setFirestoreReports] = useState([]);
   const [smartWatchLoading, setSmartWatchLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -186,6 +188,41 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
   const timeFilteredReports = useMemo(() => {
     return recentSubmissions.filter(report => isWithinTimeFilter(report.date));
   }, [recentSubmissions, isWithinTimeFilter]);
+
+  const analyticsReports = useMemo(() => {
+    const merged = new Map();
+
+    const addReport = (report, source) => {
+      if (!report) return;
+      const baseId = report.reportId || report.id;
+      if (!baseId) return;
+      const key = String(baseId).trim();
+      const enriched = { ...report, source };
+      if (!merged.has(key) || source === 'realtime') {
+        merged.set(key, enriched);
+      }
+    };
+
+    recentSubmissions.forEach(report => addReport(report, 'realtime'));
+    firestoreReports.forEach(report => addReport(report, 'firestore'));
+
+    const parseTime = (value) => {
+      if (!value) return 0;
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? date.getTime() : 0;
+    };
+
+    return Array.from(merged.values()).sort(
+      (a, b) => parseTime(b.date || b.createdAt || b.timestamp) - parseTime(a.date || a.createdAt || a.timestamp)
+    );
+  }, [recentSubmissions, firestoreReports]);
+
+  const timeFilteredAnalyticsReports = useMemo(() => {
+    return analyticsReports.filter(report => {
+      const dateValue = report.date || report.createdAt || report.timestamp;
+      return isWithinTimeFilter(dateValue);
+    });
+  }, [analyticsReports, isWithinTimeFilter]);
 
   
   const timeFilteredSmartWatch = useMemo(() => {
@@ -397,7 +434,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       smartWatchSOSReports: 0
     };
 
-    timeFilteredReports.forEach(report => {
+    timeFilteredAnalyticsReports.forEach(report => {
       const status = typeof report.status === 'string' ? report.status.toLowerCase() : '';
       if (status === 'received') {
         counts.receivedReports += 1;
@@ -534,10 +571,59 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
   };
 
 
+  useEffect(() => {
+    const reportsCollection = collection(db, 'crime_reports');
+
+    const unsubscribe = onSnapshot(
+      reportsCollection,
+      (snapshot) => {
+        const reportsArray = snapshot.docs.map((doc) => {
+          const data = doc.data() || {};
+          const dateValue = normalizeDateValue(
+            data.dateTime ||
+            data.createdAt ||
+            data.timestamp ||
+            data.date
+          );
+
+          return {
+            id: doc.id,
+            source: 'firestore',
+            type: data.crimeType || data.type || data.crime_type || 'Unknown',
+            description: data.description || 'No description',
+            location: deriveLocationText(data.location || data),
+            date: dateValue || new Date().toISOString(),
+            status: data.status || 'pending',
+            severity: data.severity || 'moderate',
+            reportId: data.reportId || doc.id,
+            reporterUid: data.reporterUid || data.userId || data.uid || null,
+            threatDetected: data.threatDetected || false,
+            aiEscalated: data.aiEscalated || false,
+            escalatedAt: data.escalatedAt || null,
+            escalationDetails: data.escalationDetails || null,
+            mlReclassified: data.mlReclassified || false,
+            mlReclassifiedAt: data.mlReclassifiedAt || null,
+            originalSeverity: data.originalSeverity || null,
+            predictedSeverity: data.predictedSeverity || null,
+            threatAnalysis: data.threatAnalysis || null,
+            mlAnalyzed: data.mlAnalyzed || false
+          };
+        }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        setFirestoreReports(reportsArray);
+      },
+      (err) => {
+        console.error('Error listening to Firestore crime reports:', err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   // Set up real-time listener for crime reports and statistics
   useEffect(() => {
-    const db = getDatabase(app);
-    const reportsRef = ref(db, 'civilian/civilian crime reports');
+    const dbRef = getDatabase(app);
+    const reportsRef = ref(dbRef, 'civilian/civilian crime reports');
     
     console.log('Setting up real-time listener for reports...');
     
@@ -550,11 +636,11 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
         
         if (snapshot.exists()) {
           const reportsData = snapshot.val();
-          reportsArray = Object.keys(reportsData).map(key => {
-            const report = reportsData[key];
+          const allEntries = Object.entries(reportsData);
+          
+          reportsArray = allEntries.map(([key, report]) => {
             let locationText = 'Location not available';
             
-            // Try different possible location field structures
             if (report.location?.address) {
               locationText = report.location.address;
             } else if (report.location?.formatted_address) {
@@ -573,19 +659,18 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
             
             return {
               id: key,
-              type: report.crimeType || 'Unknown',
+              type: report.crimeType || report.type || report.crime_type || 'Unknown',
               description: report.description || 'No description',
               location: locationText,
-              date: report.dateTime || report.createdAt,
+              date: report.dateTime || report.createdAt || report.timestamp || report.date || new Date().toISOString(),
               status: report.status || 'pending',
-              severity: report.severity || 'moderate', // Default to moderate if no severity specified
+              severity: report.severity || 'moderate',
               reportId: report.reportId || key,
-              reporterUid: report.reporterUid || report.userId || report.uid, // Include reporter UID for calling
+              reporterUid: report.reporterUid || report.userId || report.uid || null,
               threatDetected: report.threatDetected || false,
               aiEscalated: report.aiEscalated || false,
               escalatedAt: report.escalatedAt || null,
               escalationDetails: report.escalationDetails || null,
-              // ML reclassification metadata
               mlReclassified: report.mlReclassified || false,
               mlReclassifiedAt: report.mlReclassifiedAt || null,
               originalSeverity: report.originalSeverity || null,
@@ -595,22 +680,13 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
             };
           });
           
-          // Sort by date (newest first)
           reportsArray.sort((a, b) => new Date(b.date) - new Date(a.date));
         }
         
-        // Check for new reports and trigger alarm
-        
-        // Get current report IDs
         const currentReportIds = new Set(reportsArray.map(report => report.id));
-        
-        // Use ref for synchronous comparison (state updates are async)
         const previousReportIds = lastReportIdsRef.current;
-        
-        // Find new reports by comparing IDs (use ref, not state)
         const newReportIds = new Set([...currentReportIds].filter(id => !previousReportIds.has(id)));
         
-        // Debug: Log detection status
         if (newReportIds.size > 0) {
           console.log('🔍 NEW REPORT DETECTION:', {
             newReportIds: Array.from(newReportIds),
@@ -624,34 +700,16 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
           console.log('Initial load - setting report IDs');
         }
         
-        // Update ref synchronously BEFORE state update (critical for detection)
         lastReportIdsRef.current = new Set(currentReportIds);
         
         setRecentSubmissions(reportsArray);
-        setError(null); // Clear any previous errors
+        setError(null);
         console.log('Reports updated in real-time:', reportsArray.length, 'reports');
         
-        // Run ML threat analysis ONLY on NEW reports (not on old data or continuously)
-        // Only analyze when a NEW report is detected (has ID that wasn't in previous snapshot)
         if (newReportIds.size > 0 && previousReportIds.size > 0) {
-          // NEW report detected - analyze only the new report(s)
           const newReports = reportsArray.filter(report => newReportIds.has(report.id));
           console.log(`🚨 ML Threat Detection: New report detected! Analyzing ${newReports.length} new report(s)...`);
-          console.log(`   New report IDs:`, Array.from(newReportIds));
-          console.log(`   New reports:`, newReports.map(r => ({ id: r.id, description: r.description?.substring(0, 50), severity: r.severity })));
-          
-          // Analyze only new reports using ML model
           analyzeReportsForThreats(newReports);
-        } else {
-          // No new reports detected - model in standby mode
-          // On initial load (previousReportIds.size === 0), don't analyze existing reports
-          // Only log standby status once per session to reduce console noise
-          if (previousReportIds.size === 0 && reportsArray.length > 0) {
-            console.log(`✅ ML Threat Detection: Ready and waiting for new reports (${reportsArray.length} existing reports loaded, NOT analyzing old data)`);
-          } else if (newReportIds.size === 0 && previousReportIds.size > 0) {
-            // Subsequent updates with no new reports - silent standby
-            // Don't log to avoid console noise
-          }
         }
       } catch (err) {
         console.error('Error processing real-time data:', err);
@@ -665,7 +723,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       setLoading(false);
     });
 
-    // Cleanup function to remove the listener when component unmounts
     return () => {
       console.log('Cleaning up real-time listener...');
       off(reportsRef, 'value', unsubscribe);
@@ -1702,14 +1759,14 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div>
                 <PieChart 
-                  data={timeFilteredReports} 
+                  data={timeFilteredAnalyticsReports} 
                   title="Crime Type Distribution"
                 />
               </div>
 
               <div>
                 <BarChart 
-                  data={timeFilteredReports} 
+                  data={timeFilteredAnalyticsReports} 
                   title="Reports by Status"
                   type="status"
                 />
@@ -1719,7 +1776,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div>
                 <BarChart 
-                  data={timeFilteredReports} 
+                  data={timeFilteredAnalyticsReports} 
                   title="Reports by Severity"
                   type="severity"
                 />
@@ -1727,7 +1784,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
 
               <div>
                 <BarChart 
-                  data={timeFilteredReports} 
+                  data={timeFilteredAnalyticsReports} 
                   title="Monthly Report Trends"
                   type="monthly"
                 />

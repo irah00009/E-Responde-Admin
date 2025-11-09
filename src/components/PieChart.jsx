@@ -371,10 +371,10 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
                   />
                 </div>
                 {labels.length > 1 && (
-                  <div className="flex flex-wrap items-center justify-center gap-5 pt-10">
+                  <div className="flex flex-wrap items-center justify-center gap-6 pt-12">
                     <button
                       type="button"
-                      className="inline-flex items-center justify-center px-8 py-4 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-lg hover:bg-gray-200 transition-colors duration-150"
+                      className="inline-flex items-center justify-center px-10 py-5 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-2xl hover:bg-gray-200 transition-colors duration-150"
                       onClick={(event) => {
                         event.stopPropagation()
                         handlePrevSlice()
@@ -384,7 +384,7 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
                     </button>
                     <button
                       type="button"
-                      className="inline-flex items-center justify-center px-8 py-4 rounded-2xl bg-gray-900 text-white font-semibold text-lg hover:bg-gray-800 transition-colors duration-150"
+                      className="inline-flex items-center justify-center px-10 py-5 rounded-2xl bg-gray-900 text-white font-semibold text-2xl hover:bg-gray-800 transition-colors duration-150"
                       onClick={(event) => {
                         event.stopPropagation()
                         handleNextSlice()

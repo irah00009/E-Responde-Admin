@@ -1,5 +1,6 @@
 import { getDatabase, ref, get } from 'firebase/database'
-import { app } from '../firebase'
+import { collection, getDocs } from 'firebase/firestore'
+import { app, db } from '../firebase'
 import { processReportWithGeotagging } from './geotaggingService'
 
 // Model configuration
@@ -20,6 +21,223 @@ const AVAILABLE_LOCATIONS = [
   'Barangay 41',
   'Barangay 43'
 ]
+
+const CRIME_TYPE_FIELDS = ['crimeType', 'type', 'crime_type']
+const DATE_FIELDS = ['dateTime', 'createdAt', 'timestamp', 'date', 'reportedAt', 'time']
+const BARANGAY_FIELDS = [
+  'barangay',
+  'barangayName',
+  'barangay_name',
+  'barangayNumber',
+  'barangay_number'
+]
+
+const LOCATION_BARANGAY_FIELDS = [
+  ['location', 'barangay'],
+  ['location', 'barangayName'],
+  ['location', 'barangay_name'],
+  ['location', 'address', 'barangay'],
+  ['location', 'address', 'barangayName'],
+  ['address', 'barangay'],
+  ['address', 'barangayName']
+]
+
+const normalizeCrimeTypeValue = (value) => {
+  if (!value) return ''
+  const crime = String(value).trim()
+  if (!crime) return ''
+  const lower = crime.toLowerCase()
+  if (lower === 'others' || lower === 'emergency sos') {
+    return 'Other'
+  }
+  return crime
+}
+
+const toISODate = (value) => {
+  if (!value) return null
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+  if (typeof value?.toDate === 'function') {
+    try {
+      return value.toDate().toISOString()
+    } catch (error) {
+      console.warn('Failed to convert Firestore Timestamp via toDate:', error)
+    }
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (typeof value.seconds === 'number') {
+      const millis = value.seconds * 1000 + (value.nanoseconds || 0) / 1e6
+      const date = new Date(millis)
+      return Number.isNaN(date.getTime()) ? null : date.toISOString()
+    }
+    if ('$date' in value) {
+      return toISODate(value.$date)
+    }
+  }
+  if (typeof value === 'number') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  }
+  if (typeof value === 'string') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date.toISOString()
+  }
+  return null
+}
+
+const extractNestedValue = (obj, path) => {
+  if (!obj || typeof obj !== 'object') return undefined
+  return path.reduce((acc, key) => {
+    if (acc && typeof acc === 'object') {
+      return acc[key]
+    }
+    return undefined
+  }, obj)
+}
+
+const extractBarangay = (report) => {
+  for (const key of BARANGAY_FIELDS) {
+    const value = report?.[key]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  for (const path of LOCATION_BARANGAY_FIELDS) {
+    const value = extractNestedValue(report, path)
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  if (report?.geotagging?.barangay) {
+    return report.geotagging.barangay
+  }
+  if (report?.geotagging?.nearestBarangay) {
+    return report.geotagging.nearestBarangay
+  }
+
+  return ''
+}
+
+const extractCrimeType = (report) => {
+  for (const field of CRIME_TYPE_FIELDS) {
+    const value = report?.[field]
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+  return ''
+}
+
+const extractDateValue = (report) => {
+  for (const field of DATE_FIELDS) {
+    const value = report?.[field]
+    if (value) {
+      return value
+    }
+  }
+  return null
+}
+
+const getReportKey = (report, fallback) => {
+  if (!report) return fallback
+  const candidates = [
+    report.reportId,
+    report.reportID,
+    report.report_id,
+    report.caseId,
+    report.caseID,
+    report.caseNumber,
+    report.id
+  ]
+  const key = candidates.find(value => typeof value === 'string' && value.trim())
+  if (key) {
+    return key.trim()
+  }
+  return fallback
+}
+
+const ensureBarangay = (report, allReports) => {
+  const direct = extractBarangay(report)
+  if (direct) {
+    return direct
+  }
+  try {
+    const processed = processReportWithGeotagging(report, allReports)
+    return processed?.geotagging?.barangay || processed?.geotagging?.nearestBarangay || ''
+  } catch (error) {
+    console.warn('Failed to geotag report for barangay inference:', error)
+    return ''
+  }
+}
+
+const buildCombinedReports = async () => {
+  const database = getDatabase(app)
+  const reportsRef = ref(database, 'civilian/civilian crime reports')
+
+  const [realtimeSnapshot, firestoreSnapshot] = await Promise.all([
+    get(reportsRef).catch(error => {
+      console.error('Error fetching reports from Realtime Database:', error)
+      return null
+    }),
+    getDocs(collection(db, 'crime_reports')).catch(error => {
+      console.error('Error fetching reports from Firestore:', error)
+      return null
+    })
+  ])
+
+  const combinedMap = new Map()
+
+  if (realtimeSnapshot && realtimeSnapshot.exists()) {
+    const realtimeData = realtimeSnapshot.val()
+    Object.entries(realtimeData).forEach(([key, data]) => {
+      const normalized = {
+        source: 'realtime',
+        id: key,
+        ...data
+      }
+      const mapKey = getReportKey(normalized, key)
+      combinedMap.set(mapKey, normalized)
+    })
+  }
+
+  if (firestoreSnapshot && !firestoreSnapshot.empty) {
+    firestoreSnapshot.forEach(doc => {
+      const data = doc.data() || {}
+      const normalized = {
+        source: 'firestore',
+        id: doc.id,
+        ...data
+      }
+      const mapKey = getReportKey(normalized, doc.id)
+      const existing = combinedMap.get(mapKey)
+      if (existing) {
+        combinedMap.set(mapKey, { ...existing, ...normalized })
+      } else {
+        combinedMap.set(mapKey, normalized)
+      }
+    })
+  }
+
+  const combinedReports = Array.from(combinedMap.values())
+
+  const enrichedReports = combinedReports.map(report => {
+    const isoDate = toISODate(extractDateValue(report))
+    const normalizedCrimeType = normalizeCrimeTypeValue(extractCrimeType(report))
+    const barangay = ensureBarangay(report, combinedReports)
+
+    return {
+      ...report,
+      isoDate,
+      normalizedCrimeType,
+      barangay
+    }
+  })
+
+  return enrichedReports.filter(report => report.isoDate)
+}
 
 // Model file mapping
 const getModelFileName = (crimeType, location) => {
@@ -52,43 +270,23 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
   try {
     console.log(`📊 Fetching data for ${crimeType} in ${barangay}`);
 
-    const db = getDatabase(app);
-    const reportsRef = ref(db, 'civilian/civilian crime reports');
-    const snapshot = await get(reportsRef);
+    const combinedReports = await buildCombinedReports();
 
-    if (!snapshot.exists()) {
-      console.warn('⚠️ No data found in Realtime Database.');
+    if (!combinedReports || combinedReports.length === 0) {
+      console.warn('⚠️ No data found across Firebase sources.');
       return [];
     }
 
-    const reports = snapshot.val();
-    const allReports = Object.entries(reports).map(([id, data]) => ({
-      id,
-      ...data,
-    }));
+    const targetCrime = normalizeCrimeTypeValue(crimeType).toLowerCase();
+    const targetBarangay = (barangay || '').trim().toLowerCase();
 
-    // Filter reports based on selected barangay + crimeType
-    const filteredReports = allReports.filter((report) => {
+    const filteredReports = combinedReports.filter(report => {
+      const reportCrime = normalizeCrimeTypeValue(report.normalizedCrimeType || extractCrimeType(report)).toLowerCase();
       const reportBarangay = (report.barangay || '').trim().toLowerCase();
-      let reportCrime = (report.crimeType || report.type || report.crime_type || '').trim().toLowerCase();
-      const targetBarangay = barangay.trim().toLowerCase();
-      let targetCrime = crimeType.trim().toLowerCase();
-
-      // Normalize "Other" and "Others" to match both variations
-      if (targetCrime === 'others') {
-        targetCrime = 'other';
-      }
-      if (reportCrime === 'others') {
-        reportCrime = 'other';
-      }
-
-      // Check if crime type matches
-      const crimeMatches = reportCrime === targetCrime;
-
       return (
+        reportCrime === targetCrime &&
         reportBarangay === targetBarangay &&
-        crimeMatches &&
-        (report.dateTime || report.createdAt || report.timestamp)
+        report.isoDate
       );
     });
 
@@ -97,19 +295,13 @@ export const fetchHistoricalData = async (crimeType, barangay) => {
       return [];
     }
 
-    // Group by month (for time-series)
     const monthlyData = {};
-    filteredReports.forEach((report) => {
-      // Try multiple date fields
-      const dateStr = report.dateTime || report.createdAt || report.timestamp || report.date;
-      if (!dateStr) return;
-      
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) {
-        console.warn('Invalid date for report:', report.id, dateStr);
+    filteredReports.forEach(report => {
+      const date = new Date(report.isoDate);
+      if (Number.isNaN(date.getTime())) {
+        console.warn('Invalid date for report:', report.id, report.isoDate);
         return;
       }
-      
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1;
     });
@@ -364,38 +556,27 @@ export const getAvailableLocations = () => {
 // Fetch available filters from Firebase
 export const fetchAvailableFilters = async () => {
   try {
-    const db = getDatabase(app);
-    const refReports = ref(db, 'civilian/civilian crime reports');
-    const snapshot = await get(refReports);
-    if (!snapshot.exists()) {
-      console.warn('⚠️ No crime reports found for filters');
-      return { barangays: [], crimeTypes: [] };
+    const reports = await buildCombinedReports()
+
+    if (!reports || reports.length === 0) {
+      console.warn('⚠️ No crime reports found across Firebase sources for filters')
+      return { barangays: [], crimeTypes: [] }
     }
 
-    const data = Object.values(snapshot.val());
-    
-    // Extract barangays (locations)
-    const barangays = [...new Set(
-      data.map(r => r.barangay).filter(Boolean)
-    )];
-    
-    // Extract crime types with normalization
-    const crimeTypesSet = new Set();
-    data.forEach(r => {
-      const crimeType = r.crimeType || r.type || r.crime_type;
-      if (crimeType && crimeType.trim()) {
-        let normalized = crimeType.trim();
-        // Normalize "Others" to "Other"
-        if (normalized === 'Others' || normalized === 'Emergency SOS') {
-          normalized = 'Other';
-        }
-        crimeTypesSet.add(normalized);
-      }
-    });
-    const crimeTypes = Array.from(crimeTypesSet).sort();
+    const barangays = Array.from(new Set(
+      reports
+        .map(report => (report.barangay || '').trim())
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
-    console.log(`✅ Found ${barangays.length} barangays and ${crimeTypes.length} crime types`);
-    
+    const crimeTypes = Array.from(new Set(
+      reports
+        .map(report => normalizeCrimeTypeValue(report.normalizedCrimeType || extractCrimeType(report)))
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+    console.log(`✅ Found ${barangays.length} barangays and ${crimeTypes.length} crime types across Firebase`);
+
     return { barangays, crimeTypes };
   } catch (error) {
     console.error('❌ Error fetching available filters:', error);
