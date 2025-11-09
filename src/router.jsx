@@ -7,7 +7,6 @@ import Analytics from './components/Analytics.jsx'
 import EnhancedDispatch from './components/EnhancedDispatch.jsx'
 import AccountManagement from './components/AccountManagement.jsx'
 import VoIPManagement from './components/VoIPManagement.jsx'
-import SOSManagement from './components/SOSManagement.jsx'
 import EmergencyContactsManagement from './components/EmergencyContactsManagement.jsx'
 import ViewReport from './components/ViewReport.jsx'
 import CrimeReportForm from './components/CrimeReportForm.jsx'
@@ -53,7 +52,6 @@ const router = createBrowserRouter([
       { path: 'analytics', element: <Analytics /> },
       { path: 'dispatch', element: <EnhancedDispatch /> },
       { path: 'voip', element: <VoIPManagement /> },
-      { path: 'sos', element: <SOSManagement /> },
       { path: 'emergency-contacts', element: <EmergencyContactsManagement /> },
       { path: 'crime-report', element: <CrimeReportForm /> },
       { path: 'firestore-reports', element: <FirestoreReports /> },
