@@ -15,8 +15,8 @@ function VoIPManagement() {
     missedCalls: 0,
     averageDuration: 0
   })
-  const [selectedCall, setSelectedCall] = useState(null)
-  const [showCallDetails, setShowCallDetails] = useState(false)
+  const [selectedCall] = useState(null)
+  const [showCallDetails] = useState(false)
 
   useEffect(() => {
     fetchCalls()
@@ -27,6 +27,7 @@ function VoIPManagement() {
       const callsRef = ref(realtimeDb, 'voip_calls')
       off(callsRef, 'value')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchCalls = async () => {
@@ -216,9 +217,9 @@ function VoIPManagement() {
       switch (status.toLowerCase()) {
         case 'ringing': return '#f59e0b'
         case 'answered': return '#10b981'
-        case 'ended': return '#6b7280'
+        case 'ended': return '#10b981'
         case 'missed': return '#ef4444'
-        case 'rejected': return '#f97316'
+        case 'rejected': return '#dc2626'
         default: return '#6b7280'
       }
     } catch (error) {
@@ -229,37 +230,30 @@ function VoIPManagement() {
 
   const getStatusIcon = (status) => {
     try {
-      if (!status) return '?'
+      if (!status) return ''
       switch (status.toLowerCase()) {
-        case 'ringing': return 'RING'
-        case 'answered': return 'DONE'
-        case 'ended': return 'END'
-        case 'missed': return 'MISS'
-        case 'rejected': return 'REJECT'
-        default: return '?'
+        case 'ringing': return ''
+        case 'answered': return ''
+        case 'ended': return ''
+        case 'missed': return ''
+        case 'rejected': return ''
+        default: return ''
       }
     } catch (error) {
       console.warn('Error getting status icon:', error)
-      return '?'
+      return ''
     }
   }
 
-  const handleViewCallDetails = (call) => {
-    try {
-      if (!call) {
-        console.warn('No call data provided to handleViewCallDetails')
-        return
-      }
-      setSelectedCall(call)
-      setShowCallDetails(true)
-    } catch (error) {
-      console.error('Error viewing call details:', error)
-    }
-  }
-
-  const handleCloseCallDetails = () => {
-    setSelectedCall(null)
-    setShowCallDetails(false)
+  const formatStatus = (status) => {
+    if (!status) return 'Unknown'
+    const normalized = status.toLowerCase()
+    if (normalized === 'ended') return 'Ended'
+    if (normalized === 'rejected') return 'Rejected'
+    return normalized
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
   }
 
   const handleEndCall = async (callId) => {
@@ -295,7 +289,7 @@ function VoIPManagement() {
       <div className="voip-management-container">
         <div className="voip-management-header">
           <h1>VoIP Call Management</h1>
-          <p>Monitor and manage voice calls between users</p>
+          <p>Monitor calls between responding police and civilian</p>
         </div>
         <div className="error-message">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -316,43 +310,133 @@ function VoIPManagement() {
     <div className="voip-management-container">
       <div className="voip-management-header">
         <h1>VoIP Call Management</h1>
-        <p>Monitor and manage voice calls between users</p>
+        <p>Monitor calls between responding police and civilian</p>
       </div>
 
       {/* Call Statistics */}
-      <div className="call-stats">
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Total Calls</h3>
-            <p className="stat-number">{callStats.totalCalls}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {callStats.totalCalls}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Total Calls
           </div>
         </div>
-        
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Active Calls</h3>
-            <p className="stat-number">{callStats.activeCalls}</p>
+
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {callStats.activeCalls}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Active Calls
           </div>
         </div>
-        
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Completed</h3>
-            <p className="stat-number">{callStats.completedCalls}</p>
+
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {callStats.completedCalls}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Completed
           </div>
         </div>
-        
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Missed</h3>
-            <p className="stat-number">{callStats.missedCalls}</p>
+
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {callStats.missedCalls}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Missed
           </div>
         </div>
-        
-        <div className="stat-card">
-          <div className="stat-content">
-            <h3>Avg Duration</h3>
-            <p className="stat-number">{formatDuration(callStats.averageDuration)}</p>
+
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {formatDuration(callStats.averageDuration)}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Avg Duration
           </div>
         </div>
       </div>
@@ -387,20 +471,11 @@ function VoIPManagement() {
                 <div className="call-header">
                   <div className="call-status">
                     <span className="status-icon">{getStatusIcon(call.status)}</span>
-                    <span 
-                      className="status-text"
-                      style={{ color: getStatusColor(call.status) }}
-                    >
-                      {call.status.toUpperCase()}
+                    <span className="status-text" style={{ color: getStatusColor(call.status) }}>
+                      {formatStatus(call.status)}
                     </span>
                   </div>
                   <div className="call-actions">
-                    <button 
-                      className="view-details-btn"
-                      onClick={() => handleViewCallDetails(call)}
-                    >
-                      View Details
-                    </button>
                     {call.status === 'answered' && (
                       <button 
                         className="end-call-btn"
@@ -464,7 +539,6 @@ function VoIPManagement() {
                   <th>Duration</th>
                   <th>Started</th>
                   <th>Ended</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -488,7 +562,7 @@ function VoIPManagement() {
                         className="status-badge"
                         style={{ backgroundColor: getStatusColor(call.status) }}
                       >
-                        {getStatusIcon(call.status)} {call.status.toUpperCase()}
+                        {getStatusIcon(call.status)} {formatStatus(call.status)}
                       </span>
                     </td>
                     <td className="call-duration">
@@ -501,14 +575,6 @@ function VoIPManagement() {
                     </td>
                     <td className="call-started">{formatDate(call.createdAt)}</td>
                     <td className="call-ended">{formatDate(call.endedAt)}</td>
-                    <td className="call-actions">
-                      <button 
-                        className="view-details-btn"
-                        onClick={() => handleViewCallDetails(call)}
-                      >
-                        View Details
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -523,7 +589,7 @@ function VoIPManagement() {
           <div className="modal-content">
             <div className="modal-header">
               <h3>Call Details</h3>
-              <button className="modal-close" onClick={handleCloseCallDetails}>
+              <button className="modal-close">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -537,11 +603,8 @@ function VoIPManagement() {
                 </div>
                 <div className="detail-item">
                   <strong>Status:</strong> 
-                  <span 
-                    className="status-badge"
-                    style={{ backgroundColor: getStatusColor(selectedCall.status) }}
-                  >
-                    {getStatusIcon(selectedCall.status)} {selectedCall.status.toUpperCase()}
+                  <span className="status-badge" style={{ backgroundColor: getStatusColor(selectedCall.status) }}>
+                    {getStatusIcon(selectedCall.status)} {formatStatus(selectedCall.status)}
                   </span>
                 </div>
                 <div className="detail-item">
@@ -576,7 +639,7 @@ function VoIPManagement() {
               </div>
             </div>
             <div className="modal-actions">
-              <button className="close-btn" onClick={handleCloseCallDetails}>
+              <button className="close-btn">
                 Close
               </button>
             </div>

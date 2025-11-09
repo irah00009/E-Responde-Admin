@@ -8,18 +8,11 @@ function AccountManagement() {
 
   return (
     <div className="account-management-container">
-      <div className="account-management-header">
-        <h1>Account Management</h1>
-        <p>Manage civilian and police accounts</p>
-      </div>
-
-      <div className="account-content">
-        {accountType === 'civilian' ? (
-          <UserAccountManagement />
-        ) : (
-          <PoliceAccountManagement />
-        )}
-      </div>
+      {accountType === 'civilian' ? (
+        <UserAccountManagement />
+      ) : (
+        <PoliceAccountManagement />
+      )}
     </div>
   )
 }

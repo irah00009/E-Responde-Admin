@@ -7,7 +7,6 @@ function UserAccountManagement() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [totalUsers, setTotalUsers] = useState(0)
   const [actionLoading, setActionLoading] = useState(null)
 
   useEffect(() => {
@@ -45,10 +44,8 @@ function UserAccountManagement() {
         })
         
         setUsers(userList)
-        setTotalUsers(userList.length)
       } else {
         setUsers([])
-        setTotalUsers(0)
       }
       
     } catch (err) {
@@ -114,10 +111,6 @@ function UserAccountManagement() {
   if (loading) {
     return (
       <div className="user-management-container">
-        <div className="user-management-header">
-          <h1>User Account Management</h1>
-          <p>Manage and monitor registered users</p>
-        </div>
         <div className="loading-container">
           <div className="loading-spinner"></div>
           <p>Loading user data...</p>
@@ -128,19 +121,6 @@ function UserAccountManagement() {
 
   return (
     <div className="user-management-container">
-      <div className="user-management-header">
-        <h1>Civilian Management</h1>
-        <p>Manage and monitor registered civilian users</p>
-      </div>
-
-       <div className="user-stats">
-         <div className="stat-card">
-           <div className="stat-content">
-             <h3>Total Registered Users</h3>
-             <p className="stat-number">{totalUsers}</p>
-           </div>
-         </div>
-       </div>
 
       {error && (
         <div className="error-message">
@@ -154,6 +134,9 @@ function UserAccountManagement() {
       )}
 
       <div className="users-table-container">
+        <div className="user-management-header" style={{ textAlign: 'center' }}>
+          <h1>Civilian Account Management</h1>
+        </div>
         <div className="table-header">
           <h2>Registered Users</h2>
         </div>

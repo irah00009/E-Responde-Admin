@@ -14,8 +14,6 @@ function EmergencyContactsManagement() {
   })
   const [selectedContact, setSelectedContact] = useState(null)
   const [showContactDetails, setShowContactDetails] = useState(false)
-  const [filterUser, setFilterUser] = useState('all')
-  const [filterStatus, setFilterStatus] = useState('all')
   const [userNames, setUserNames] = useState({}) // Store user names by userId
 
   useEffect(() => {
@@ -197,16 +195,7 @@ function EmergencyContactsManagement() {
     })
   }
 
-  const getRelationshipColor = (relationship) => {
-    switch (relationship?.toLowerCase()) {
-      case 'family': return '#ef4444'
-      case 'friend': return '#3b82f6'
-      case 'colleague': return '#10b981'
-      case 'neighbor': return '#f59e0b'
-      case 'other': return '#6b7280'
-      default: return '#6b7280'
-    }
-  }
+  const getRelationshipColor = () => '#2563eb'
 
   const getStatusColor = (isActive) => {
     if (!isActive) return '#6b7280'
@@ -219,12 +208,7 @@ function EmergencyContactsManagement() {
   }
 
   const filteredContacts = emergencyContacts.filter(contact => {
-    const userMatch = filterUser === 'all' || contact.userId === filterUser
-    const statusMatch = filterStatus === 'all' || 
-      (filterStatus === 'active' && contact.isActive) ||
-      (filterStatus === 'inactive' && !contact.isActive)
-    
-    return userMatch && statusMatch
+    return true
   })
 
   if (loading) {
@@ -245,20 +229,80 @@ function EmergencyContactsManagement() {
       </div>
 
       {/* Contact Statistics */}
-      <div className="contact-stats">
-        <div className="stat-card">
-          <div className="stat-value">{contactStats.totalContacts}</div>
-          <div className="stat-title">TOTAL CONTACTS</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {contactStats.totalContacts}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Total Contacts
+          </div>
         </div>
-        
-        <div className="stat-card">
-          <div className="stat-value">{contactStats.activeContacts}</div>
-          <div className="stat-title">ACTIVE CONTACTS</div>
+
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {contactStats.activeContacts}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Active Contacts
+          </div>
         </div>
-        
-        <div className="stat-card">
-          <div className="stat-value">{contactStats.averageContactsPerUser}</div>
-          <div className="stat-title">AVG PER USER</div>
+
+        <div className="card">
+          <div
+            className="text-3xl font-bold text-black mb-2"
+            style={{
+              fontSize: '3rem',
+              fontWeight: '800',
+              color: '#1e293b',
+              letterSpacing: '-0.025em'
+            }}
+          >
+            {contactStats.averageContactsPerUser}
+          </div>
+          <div
+            className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+            style={{
+              fontSize: '0.95rem',
+              fontWeight: '700',
+              color: '#64748b',
+              letterSpacing: '0.05em'
+            }}
+          >
+            Avg Per User
+          </div>
         </div>
       </div>
 
@@ -274,45 +318,18 @@ function EmergencyContactsManagement() {
       )}
 
       {/* Filters */}
-      <div className="filters-section">
-        <div className="filter-group">
-          <label>User Filter:</label>
-          <select 
-            value={filterUser} 
-            onChange={(e) => setFilterUser(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Users</option>
-            {/* Add specific users here if needed */}
-          </select>
-        </div>
-        
-        <div className="filter-group">
-          <label>Status Filter:</label>
-          <select 
-            value={filterStatus} 
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
-        
-        <button onClick={fetchEmergencyContacts} className="refresh-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="23,4 23,10 17,10"></polyline>
-            <polyline points="1,20 1,14 7,14"></polyline>
-            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
-          </svg>
-          Refresh
-        </button>
-      </div>
-
-      {/* Contacts Table */}
       <div className="contacts-section">
-        <h2>Emergency Contacts</h2>
+        <div className="contacts-section-header">
+          <h2>Emergency Contacts</h2>
+          <button onClick={fetchEmergencyContacts} className="refresh-btn table-refresh-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23,4 23,10 17,10"></polyline>
+              <polyline points="1,20 1,14 7,14"></polyline>
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+            </svg>
+            Refresh
+          </button>
+        </div>
         {filteredContacts.length === 0 ? (
           <div className="no-contacts">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -332,10 +349,7 @@ function EmergencyContactsManagement() {
                   <th>Name</th>
                   <th>Phone</th>
                   <th>Relationship</th>
-                  <th>Status</th>
-                  <th>Primary</th>
                   <th>Created</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -358,42 +372,13 @@ function EmergencyContactsManagement() {
                     </td>
                     <td className="contact-relationship">
                       <span 
-                        className="relationship-badge"
+                      className="relationship-badge"
                         style={{ backgroundColor: getRelationshipColor(contact.relationship) }}
                       >
                         {contact.relationship || 'Other'}
                       </span>
                     </td>
-                    <td className="contact-status">
-                      <span 
-                        className="status-badge"
-                        style={{ backgroundColor: getStatusColor(contact.isActive) }}
-                      >
-                        {getStatusText(contact.isActive)}
-                      </span>
-                    </td>
-                    <td className="contact-primary">
-                      {contact.isPrimary ? (
-                        <span className="primary-indicator">PRIMARY</span>
-                      ) : (
-                        <span className="secondary-indicator">-</span>
-                      )}
-                    </td>
                     <td className="contact-created">{formatDate(contact.createdAt)}</td>
-                    <td className="contact-actions">
-                      <button 
-                        className="view-details-btn"
-                        onClick={() => handleViewContactDetails(contact)}
-                      >
-                        View
-                      </button>
-                      <button 
-                        className="delete-btn"
-                        onClick={() => handleDeleteContact(contact.id, contact.userId)}
-                      >
-                        Delete
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
