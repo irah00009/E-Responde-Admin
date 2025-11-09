@@ -38,6 +38,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
     today: 'Today',
     yesterday: 'Yesterday',
     week: 'This Week',
+    month: 'This Month',
     custom: 'Custom Range'
   };
 
@@ -67,6 +68,11 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
         const startWeek = new Date(startOfToday);
         startWeek.setDate(startWeek.getDate() - 7);
         return { start: startWeek.getTime(), end: now.getTime() };
+      }
+      case 'month': {
+        const startMonth = new Date(startOfToday);
+        startMonth.setDate(1);
+        return { start: startMonth.getTime(), end: now.getTime() };
       }
       case 'custom': {
         if (customRange.start && customRange.end) {
@@ -1511,6 +1517,13 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
                   onClick={() => handleFilterSelect('week')}
                 >
                   <span>This Week</span>
+                </button>
+                <button
+                  type="button"
+                  className={timeFilter === 'month' ? 'active' : ''}
+                  onClick={() => handleFilterSelect('month')}
+                >
+                  <span>This Month</span>
                 </button>
                 <div className="time-filter-menu-divider" />
                 {showCustomInputs ? (
