@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { realtimeDb, auth, functions } from '../firebase'
-import { ref, push, set, get, remove } from 'firebase/database'
-import { createUserWithEmailAndPassword, updateProfile, signOut, signInWithEmailAndPassword } from 'firebase/auth'
+import { ref, set, get, remove } from 'firebase/database'
+import { createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { useAuth } from '../providers/AuthProvider'
 import './PoliceAccountManagement.css'
@@ -26,7 +26,6 @@ function PoliceAccountManagement() {
   const [policeAccounts, setPoliceAccounts] = useState([])
   const [policeAccountsLoading, setPoliceAccountsLoading] = useState(true)
   const [policeAccountsError, setPoliceAccountsError] = useState('')
-  const [totalPoliceAccounts, setTotalPoliceAccounts] = useState(0)
   
   // Delete account states
   const [deleteLoading, setDeleteLoading] = useState(null)
@@ -76,10 +75,8 @@ function PoliceAccountManagement() {
         })
         
         setPoliceAccounts(accountList)
-        setTotalPoliceAccounts(accountList.length)
       } else {
         setPoliceAccounts([])
-        setTotalPoliceAccounts(0)
       }
       
     } catch (err) {
@@ -562,7 +559,6 @@ function PoliceAccountManagement() {
 
       // Step 3: Update local state
       setPoliceAccounts(prev => prev.filter(account => account.id !== accountToDelete.id))
-      setTotalPoliceAccounts(prev => prev - 1)
 
       // Step 4: Close confirmation dialog
       setShowDeleteConfirm(false)
@@ -596,6 +592,10 @@ function PoliceAccountManagement() {
 
   return (
     <div className="police-management-container">
+      <div className="police-management-header" style={{ textAlign: 'center' }}>
+        <h1>Police Account Management</h1>
+      </div>
+
       {/* Police Account Creation Section */}
       <div className="police-account-section">
         <div className="section-header">
@@ -796,7 +796,6 @@ function PoliceAccountManagement() {
         <div className="section-header">
           <h2>Police Accounts</h2>
           <div className="section-info">
-            <span className="info-text">View and manage existing police accounts</span>
             <button onClick={fetchPoliceAccounts} className="refresh-btn">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="23,4 23,10 17,10"></polyline>

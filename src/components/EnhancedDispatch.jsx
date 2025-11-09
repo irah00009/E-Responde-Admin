@@ -16,7 +16,7 @@ function EnhancedDispatch() {
     averageResponseTime: 0
   })
   const [liveTracking, setLiveTracking] = useState({})
-  const [filterStatus, setFilterStatus] = useState('received')
+  const [filterStatus, setFilterStatus] = useState('in progress')
   const [showActiveOfficersModal, setShowActiveOfficersModal] = useState(false)
   const [showAvailableOfficersModal, setShowAvailableOfficersModal] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
@@ -813,10 +813,6 @@ function EnhancedDispatch() {
     const filterValue = filterStatus.toLowerCase()
 
     switch (filterValue) {
-      case 'received':
-        return reportStatus === 'received' ||
-               reportStatus === 'acknowledged'
-
       case 'in progress':
         return reportStatus === 'in progress' ||
                reportStatus === 'in-progress' ||
@@ -829,7 +825,7 @@ function EnhancedDispatch() {
                reportStatus === 'en route'
 
       default:
-        return reportStatus === filterValue
+        return false
     }
   })
 
@@ -922,7 +918,6 @@ function EnhancedDispatch() {
             onChange={(e) => setFilterStatus(e.target.value)}
             className="filter-select"
           >
-            <option value="received">Received</option>
             <option value="in progress">In Progress</option>
             <option value="dispatched">Dispatched</option>
           </select>
