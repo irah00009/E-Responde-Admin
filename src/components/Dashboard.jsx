@@ -279,6 +279,12 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
   // WebRTC refs
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const fallbackAudioRef = useRef(null);
+
+  const callStatus = callState.isInCall ? 'connected' : callState.isCalling ? 'connecting' : 'ready';
+  const callStatusLabel = callStatus === 'connected' ? 'Call Connected' : callStatus === 'connecting' ? 'Connecting' : 'Ready to Call';
 
   // Audio refs for sound effects
   const ringingAudioRef = useRef(null);
@@ -1131,30 +1137,55 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       // Handle remote audio stream from mobile app
       peerConnectionRef.current.ontrack = (event) => {
         const remoteStream = event.streams[0];
-        // Play remote audio from mobile app
-        const audio = new Audio();
-        audio.srcObject = remoteStream;
-        audio.play();
+        if (!remoteStream) {
+          console.warn('No remote stream in ontrack event');
+          return;
+        }
+        remoteStreamRef.current = remoteStream;
+        let playbackStarted = false;
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remoteStream;
+          remoteAudioRef.current.muted = false;
+          remoteAudioRef.current
+            .play()
+            .then(() => {
+              playbackStarted = true;
+              console.log('[VoIP] Playing remote audio via hidden element');
+            })
+            .catch(err => {
+              console.warn('Failed to play remote audio stream on hidden element:', err);
+            });
+        } else {
+          console.warn('Remote audio element missing');
+        }
+
+        if (!playbackStarted) {
+          try {
+            if (fallbackAudioRef.current) {
+              fallbackAudioRef.current.pause();
+              fallbackAudioRef.current.srcObject = null;
+              fallbackAudioRef.current = null;
+            }
+            const inlineAudio = new Audio();
+            inlineAudio.autoplay = true;
+            inlineAudio.playsInline = true;
+            inlineAudio.muted = false;
+            inlineAudio.srcObject = remoteStream;
+            inlineAudio
+              .play()
+              .then(() => console.log('[VoIP] Playing remote audio via fallback element'))
+              .catch(err => console.warn('Fallback audio playback failed:', err));
+            fallbackAudioRef.current = inlineAudio;
+          } catch (error) {
+            console.warn('Unable to initialise fallback remote audio playback', error);
+          }
+        }
         
         // Stop ringing and play connected sound
         stopRingingSound();
         playCallConnectedSound();
         
         setCallState(prev => ({ ...prev, isInCall: true, isCalling: false }));
-      };
-      
-      // Handle ICE candidates - following mobile app guide structure
-      peerConnectionRef.current.onicecandidate = async (event) => {
-        if (event.candidate && callState.callId) {
-          console.log('Sending ICE candidate:', event.candidate);
-          const db = getDatabase(app);
-          const candidateRef = push(ref(db, `voip_signaling/${callState.callId}/iceCandidates/caller`));
-          await set(candidateRef, {
-            candidate: event.candidate.candidate,
-            sdpMLineIndex: event.candidate.sdpMLineIndex,
-            sdpMid: event.candidate.sdpMid,
-          });
-        }
       };
       
       // Create and set local description
@@ -1169,11 +1200,25 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       const callsRef = ref(db, 'voip_calls');
       const newCallRef = push(callsRef);
       const callId = newCallRef.key;
+      const currentCallId = callId;
       
       console.log('Generated call ID:', callId);
       
       // Update call state with new callId
       setCallState(prev => ({ ...prev, callId: callId }));
+      
+      // Handle ICE candidates - following mobile app guide structure
+      peerConnectionRef.current.onicecandidate = async (event) => {
+        if (event.candidate) {
+          console.log('Sending ICE candidate:', event.candidate);
+          const candidateRef = push(ref(db, `voip_signaling/${currentCallId}/iceCandidates/caller`));
+          await set(candidateRef, {
+            candidate: event.candidate.candidate,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+            sdpMid: event.candidate.sdpMid,
+          });
+        }
+      };
       
       const callData = {
         callId,
@@ -1205,7 +1250,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       console.log('Offer sent through signaling');
       
       // Listen for answer from mobile app (following mobile app guide)
-      const answerRef = ref(db, `voip_signaling/${callId}/answer`);
+      const answerRef = ref(db, `voip_signaling/${currentCallId}/answer`);
       const answerUnsubscribe = onValue(answerRef, async (snapshot) => {
         const answer = snapshot.val();
         if (answer && peerConnectionRef.current) {
@@ -1215,7 +1260,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       });
       
       // Listen for ICE candidates from callee
-      const calleeCandidatesRef = ref(db, `voip_signaling/${callId}/iceCandidates/callee`);
+      const calleeCandidatesRef = ref(db, `voip_signaling/${currentCallId}/iceCandidates/callee`);
       const calleeCandidatesUnsubscribe = onValue(calleeCandidatesRef, (snapshot) => {
         snapshot.forEach((childSnapshot) => {
           const candidateData = childSnapshot.val();
@@ -1233,7 +1278,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       });
       
       // Listen for call status changes
-      const callStatusRef = ref(db, `voip_calls/${callId}`);
+      const callStatusRef = ref(db, `voip_calls/${currentCallId}`);
       const callStatusUnsubscribe = onValue(callStatusRef, (snapshot) => {
         if (snapshot.exists()) {
           const callData = snapshot.val();
@@ -1309,6 +1354,24 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
+    }
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach(track => track.stop());
+      remoteStreamRef.current = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
+    }
+    if (fallbackAudioRef.current) {
+      try {
+        fallbackAudioRef.current.pause();
+        fallbackAudioRef.current.srcObject = null;
+      } catch (error) {
+        console.warn('Error cleaning up fallback audio element:', error);
+      } finally {
+        fallbackAudioRef.current = null;
+      }
     }
     
     
@@ -1511,6 +1574,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
 
   return (
     <div className="min-h-full bg-gray-50 p-4 lg:p-6">
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
       <section className="mb-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h2 className="text-2xl font-bold text-black mb-2" style={{ 
@@ -1851,6 +1915,17 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
                         </td>
                         <td className="table-cell table-cell-actions">
                           <div className="action-buttons">
+                            <button
+                              className="action-btn action-btn-call"
+                              onClick={() => handleCallClick(submission)}
+                              disabled={!submission.reporterUid}
+                              title={submission.reporterUid ? 'Call Reporter' : 'Reporter contact unavailable'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                              </svg>
+                              Call
+                            </button>
                             <button 
                               className="action-btn action-btn-view" 
                               onClick={() => navigate(`/report/${submission.id}`)}
@@ -1956,7 +2031,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
                         <td className="table-cell table-cell-actions">
                           <div className="action-buttons">
                             <button 
-                              className="action-btn view-btn"
+                              className="action-btn action-btn-view"
                               onClick={() => onNavigateToSOSAlert(submission.id)}
                               title="View Details"
                             >
@@ -2054,6 +2129,17 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
                         </td>
                         <td className="table-cell table-cell-actions">
                           <div className="action-buttons">
+                            <button
+                              className="action-btn action-btn-call"
+                              onClick={() => handleCallClick(submission)}
+                              disabled={!submission.reporterUid}
+                              title={submission.reporterUid ? 'Call Reporter' : 'Reporter contact unavailable'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                              </svg>
+                              Call
+                            </button>
                             <button 
                               className="action-btn action-btn-view" 
                               onClick={() => navigate(`/report/${submission.id}`)}
@@ -2151,6 +2237,17 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
                         </td>
                       <td className="table-cell table-cell-actions">
                           <div className="action-buttons">
+                            <button
+                              className="action-btn action-btn-call"
+                              onClick={() => handleCallClick(submission)}
+                              disabled={!submission.reporterUid}
+                              title={submission.reporterUid ? 'Call Reporter' : 'Reporter contact unavailable'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                              </svg>
+                              Call
+                            </button>
                             <button 
                               className="action-btn action-btn-view" 
                               onClick={() => navigate(`/report/${submission.id}`)}
@@ -2250,6 +2347,17 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
                       </td>
                       <td className="table-cell table-cell-actions">
                           <div className="action-buttons">
+                            <button
+                              className="action-btn action-btn-call"
+                              onClick={() => handleCallClick(submission)}
+                              disabled={!submission.reporterUid}
+                              title={submission.reporterUid ? 'Call Reporter' : 'Reporter contact unavailable'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                              </svg>
+                              Call
+                            </button>
                             <button 
                               className="action-btn action-btn-view" 
                               onClick={() => navigate(`/report/${submission.id}`)}
@@ -2370,11 +2478,11 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       {/* WebRTC Call Modal */}
       {showCallModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-lg">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-black">VoIP Call</h3>
+          <div className="call-modal-surface">
+            <div className="call-modal-header">
+              <h3>VoIP Call</h3>
               <button 
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                className="call-modal-close"
                 onClick={endCall}
               >
                 ×
@@ -2388,60 +2496,62 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
             )}
             
             {callState.targetUser && (
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                  </svg>
+              <div className="call-modal-card">
+                <div className="call-modal-contact">
+                  <div className="call-modal-avatar">
+                    {(callState.targetUser.name || 'User')
+                      .split(' ')
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map(part => part[0]?.toUpperCase())
+                      .join('') || 'ER'}
+                  </div>
+                  <h4 className="call-modal-name">{callState.targetUser.name || 'Unknown Contact'}</h4>
                 </div>
-                <h4 className="text-lg font-semibold text-black mb-2">Internet Call to Mobile App</h4>
-                <p className="text-gray-900 font-medium mb-1">{callState.targetUser.name}</p>
-                <p className="text-sm text-gray-600 mb-2">
-                  {callState.targetUser.isOnline ? 
-                    <span className="inline-flex items-center gap-1 text-green-600">
-                      <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                      Online
-                    </span> : 
-                    <span className="inline-flex items-center gap-1 text-gray-500">
-                      <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-                      Offline
-                    </span>
-                  }
-                </p>
-                <p className="text-xs text-gray-500">Calling via E-Responde Mobile App</p>
+                {callState.targetUser.type && (
+                  <p className="call-modal-meta">
+                    {callState.targetUser.type.charAt(0).toUpperCase() + callState.targetUser.type.slice(1)}
+                  </p>
+                )}
+                <div className={`call-status-chip call-status-${callStatus}`}>
+                  <span className="status-indicator"></span>
+                  {callStatusLabel}
+                </div>
               </div>
             )}
             
-            <div className="text-center mb-6">
-              {callState.isCalling && !callState.isInCall && (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-                  <p className="text-gray-600">Connecting...</p>
+            <div className="call-state-panel">
+              {callStatus === 'connecting' && (
+                <div className="call-state-content">
+                  <div className="call-state-spinner"></div>
+                  <p className="call-state-text">Connecting to responder…</p>
                 </div>
               )}
               
-              {callState.isInCall && (
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-600">
+              {callStatus === 'ready' && (
+                <div className="call-state-content">
+                  <div className="call-state-badge">Ready</div>
+                  <p className="call-state-text">Start the internet call when you’re ready.</p>
+                </div>
+              )}
+              
+              {callStatus === 'connected' && (
+                <div className="call-state-connected">
+                  <div className="call-state-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                     </svg>
                   </div>
-                  <p className="text-gray-900 font-medium">Call Connected</p>
-                  <div className="flex gap-3">
+                  <p className="call-state-text">You’re connected. Coordinate with the responder.</p>
+                  <div className="call-state-actions">
                     <button 
-                      className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                        isMuted 
-                          ? 'bg-gray-200 text-gray-700' 
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`call-btn mute-btn ${isMuted ? 'muted' : ''}`}
                       onClick={toggleMute}
                     >
                       {isMuted ? 'Unmute' : 'Mute'}
                     </button>
                     <button 
-                      className="bg-status-danger text-white px-4 py-2 rounded-lg font-medium hover:bg-red-600 transition-all duration-200"
+                      className="call-btn end-call"
                       onClick={endCall}
                     >
                       End Call
@@ -2451,7 +2561,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
               )}
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex gap-3 call-dialog-actions">
               {!callState.isInCall && !callState.isCalling && (
                 <button 
                   className="btn-primary flex-1"
