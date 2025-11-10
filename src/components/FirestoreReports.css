@@ -468,17 +468,20 @@
   justify-content: center;
   z-index: 60;
   padding: 1.5rem;
+  overflow-y: auto;
 }
 
 .firestore-modal {
   background: #ffffff;
   border-radius: 14px;
   border: 1px solid #e2e8f0;
-  max-width: 720px;
-  width: 100%;
+  width: min(720px, 100%);
+  max-height: min(90vh, 640px);
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
   padding: 1.25rem 2rem 1.75rem;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .firestore-modal-header {
@@ -497,7 +500,8 @@
 
 .firestore-modal-body {
   margin-top: 1rem;
-  max-height: 260px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 0.25rem;
   display: flex;
@@ -574,13 +578,63 @@
   color: #475569;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .firestore-modal {
-    padding: 1.25rem;
+    padding: 1.25rem 1.5rem;
+    max-height: min(92vh, 600px);
   }
 
   .firestore-modal-details {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .firestore-modal-overlay {
+    align-items: flex-start;
+    padding: 1rem;
+  }
+
+  .firestore-modal {
+    margin-top: 1.25rem;
+    padding: 1.25rem;
+    width: 100%;
+    max-height: none;
+  }
+
+  .firestore-modal-body {
+    padding-right: 0;
+  }
+
+  .firestore-modal-details div {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .firestore-modal {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .firestore-modal-header h2 {
+    font-size: 1.1rem;
+  }
+
+  .firestore-modal-details {
+    gap: 0.75rem;
+  }
+
+  .firestore-modal-details div {
+    padding: 0.65rem;
+  }
+
+  .firestore-modal-details dt {
+    font-size: 0.7rem;
+  }
+
+  .firestore-modal-details dd {
+    font-size: 0.82rem;
   }
 }
 
