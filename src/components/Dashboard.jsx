@@ -1706,7 +1706,7 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
           </button>
         </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div 
             className={`card cursor-pointer transition-all duration-200 ${
               activeFilter === 'pending' ? 'ring-2 ring-black bg-gray-50' : ''
@@ -1782,29 +1782,6 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
               color: '#64748b', 
               letterSpacing: '0.05em'
             }}>Resolved Reports</div>
-          </div>
-          <div 
-            className="card cursor-pointer transition-all duration-200"
-            onClick={() => {
-              // Scroll to Smart Watch SoS section
-              const sosSection = document.querySelector('.smartwatch-sos-section');
-              if (sosSection) {
-                sosSection.scrollIntoView({ behavior: 'smooth' });
-              }
-            }}
-          >
-            <div className="text-3xl font-bold text-black mb-2" style={{ 
-              fontSize: '3rem', 
-              fontWeight: '800', 
-              color: '#1e293b', 
-              letterSpacing: '-0.025em'
-            }}>{displayStats.smartWatchSOSReports}</div>
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider" style={{ 
-              fontSize: '0.95rem', 
-              fontWeight: '700', 
-              color: '#64748b', 
-              letterSpacing: '0.05em'
-            }}>Smart Watch SoS</div>
           </div>
         </div>
       </section>
