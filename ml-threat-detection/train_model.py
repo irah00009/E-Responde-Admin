@@ -111,9 +111,11 @@ class ThreatDetectionTrainer:
         """
         Calculate optimal cosine similarity thresholds for each severity
         by testing against training data
+        Ensures Immediate and High have higher thresholds than Moderate and Low
         """
         thresholds = {}
         
+        # First pass: Calculate optimal thresholds for all severities
         for severity in ['Immediate', 'High', 'Moderate', 'Low']:
             if severity not in self.severity_embeddings:
                 continue
@@ -138,7 +140,13 @@ class ThreatDetectionTrainer:
             best_f1 = 0
             
             if len(negative_similarities) > 0:
-                test_thresholds = np.arange(0.1, 1.0, 0.05)
+                # For Immediate and High, use higher minimum threshold range
+                if severity in ['Immediate', 'High']:
+                    min_threshold = 0.3  # Higher minimum for serious threats
+                    test_thresholds = np.arange(min_threshold, 1.0, 0.05)
+                else:
+                    test_thresholds = np.arange(0.1, 1.0, 0.05)
+                
                 for threshold in test_thresholds:
                     tp = np.sum(positive_similarities >= threshold)
                     fp = np.sum(negative_similarities >= threshold)
@@ -152,7 +160,11 @@ class ThreatDetectionTrainer:
                         best_f1 = f1
                         best_threshold = threshold
             else:
-                best_threshold = np.percentile(positive_similarities, 25)  # Lower quartile
+                # Use percentile-based threshold
+                if severity in ['Immediate', 'High']:
+                    best_threshold = max(0.3, np.percentile(positive_similarities, 50))  # Median or 0.3, whichever is higher
+                else:
+                    best_threshold = np.percentile(positive_similarities, 25)  # Lower quartile
             
             thresholds[severity] = {
                 'threshold': best_threshold,
@@ -162,6 +174,25 @@ class ThreatDetectionTrainer:
             }
             
             print(f"  {severity} threshold: {best_threshold:.3f} (F1: {best_f1:.3f})")
+        
+        # Second pass: Ensure Immediate and High thresholds are higher than Moderate and Low
+        moderate_threshold = thresholds.get('Moderate', {}).get('threshold', 0.2)
+        low_threshold = thresholds.get('Low', {}).get('threshold', 0.2)
+        max_lower_severity = max(moderate_threshold, low_threshold)
+        
+        # Set minimum thresholds for Immediate and High
+        min_immediate_threshold = max(0.35, max_lower_severity + 0.1)  # At least 0.35, or 0.1 above Moderate/Low
+        min_high_threshold = max(0.3, max_lower_severity + 0.05)  # At least 0.3, or 0.05 above Moderate/Low
+        
+        if 'Immediate' in thresholds:
+            if thresholds['Immediate']['threshold'] < min_immediate_threshold:
+                print(f"  WARNING: Adjusting Immediate threshold from {thresholds['Immediate']['threshold']:.3f} to {min_immediate_threshold:.3f}")
+                thresholds['Immediate']['threshold'] = min_immediate_threshold
+        
+        if 'High' in thresholds:
+            if thresholds['High']['threshold'] < min_high_threshold:
+                print(f"  WARNING: Adjusting High threshold from {thresholds['High']['threshold']:.3f} to {min_high_threshold:.3f}")
+                thresholds['High']['threshold'] = min_high_threshold
         
         self.severity_thresholds = thresholds
     
@@ -178,6 +209,7 @@ class ThreatDetectionTrainer:
         if not self.is_trained:
             raise ValueError("Model not trained. Call train() first.")
         
+        # Use cosine similarity for unbiased ML predictions
         # Vectorize input
         input_vector = self.vectorizer.transform([description])
         
