@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Chart as ChartJS,
   ArcElement,
@@ -15,9 +15,36 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
   const crimeTypeDetails = {}
   const chartRef = useRef(null)
   const modalChartRef = useRef(null)
+  const modalChartContainerRef = useRef(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalActiveIndex, setModalActiveIndex] = useState(null)
-  
+
+  const forceChartResize = useCallback(() => {
+    const mainChart = chartRef.current
+    if (mainChart?.resize) {
+      mainChart.resize()
+    }
+    const modalChart = modalChartRef.current
+    if (modalChart?.resize) {
+      modalChart.resize()
+      modalChart.update()
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleResize = () => {
+      requestAnimationFrame(forceChartResize)
+    }
+
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('orientationchange', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('orientationchange', handleResize)
+    }
+  }, [forceChartResize])
+
   data.forEach(report => {
     const rawType = report.crimeType || report.type || report.crime_type
     if (!rawType) {
@@ -182,6 +209,50 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
     }
   }, [backgroundColors, crimeTypeDetails, labels, modalActiveIndex, totalReports, values])
 
+  const sortedCrimeTypes = useMemo(() => {
+    return labels
+      .map((label, index) => ({
+        label,
+        value: values[index] || 0,
+        color: backgroundColors[index],
+        percentage: totalReports > 0 ? ((values[index] / totalReports) * 100).toFixed(1) : '0.0'
+      }))
+      .sort((a, b) => b.value - a.value)
+  }, [backgroundColors, labels, totalReports, values])
+
+  const hasModalSelection = Boolean(modalActiveDetails)
+  const chartFlexClass = hasModalSelection ? 'flex-[1.1]' : 'flex-[1.2]'
+  const detailsWrapperClass = hasModalSelection
+    ? 'flex-[1.45] min-h-0 overflow-y-auto pr-1'
+    : 'flex-[1.3] min-h-0 overflow-y-auto pr-1'
+
+  const pieWrapperStyle = useMemo(() => ({
+    maxWidth: hasModalSelection ? 'clamp(18rem, 46vw, 34rem)' : 'clamp(16rem, 42vw, 30rem)',
+    width: '100%',
+    margin: '0 auto',
+    aspectRatio: '1 / 1'
+  }), [hasModalSelection])
+
+  useEffect(() => {
+    if (isModalOpen) {
+      requestAnimationFrame(forceChartResize)
+    }
+  }, [forceChartResize, isModalOpen])
+
+  useEffect(() => {
+    if (!isModalOpen || !modalChartContainerRef.current || typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(forceChartResize)
+    })
+
+    observer.observe(modalChartContainerRef.current)
+
+    return () => observer.disconnect()
+  }, [forceChartResize, isModalOpen])
+
   const formatDate = (dateValue) => {
     if (!dateValue) {
       return '—'
@@ -284,14 +355,14 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
       </div>
       {isModalOpen && modalChartData && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 px-4 py-8 sm:px-6 lg:px-10"
           onClick={(event) => {
             if (event.target === event.currentTarget) {
               closeModal()
             }
           }}
         >
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-[100rem] mx-10 p-14 relative">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-[90vw] xl:max-w-[100rem] relative flex flex-col max-h-[92vh] min-h-[70vh] overflow-y-auto overflow-x-hidden">
             <button
               type="button"
               className="absolute top-5 right-6 text-gray-400 hover:text-gray-600 text-4xl leading-none"
@@ -299,13 +370,15 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
             >
               ×
             </button>
-            <div className="flex flex-col 2xl:flex-row gap-16 min-h-[34rem]">
-              <div className="flex-[1.25]">
-                <h3 className="text-5xl font-extrabold text-gray-900 mb-8">{modalActiveDetails ? modalActiveDetails.label : title}</h3>
-                <p className="text-2xl text-gray-500 mb-12 leading-relaxed">
+            <div className={`flex flex-col ${hasModalSelection ? 'lg:flex-row' : 'xl:flex-row'} gap-10 xl:gap-16 h-full overflow-hidden p-8 sm:p-10 lg:p-12 xl:p-14`}>
+              <div className={detailsWrapperClass}>
+                <h3 className="text-3xl sm:text-4xl xl:text-5xl font-extrabold text-gray-900 mb-6 xl:mb-8">
+                  {modalActiveDetails ? modalActiveDetails.label : title}
+                </h3>
+                <p className="text-lg sm:text-xl xl:text-2xl text-gray-500 mb-6 xl:mb-8 leading-relaxed">
                   {modalActiveDetails ? `Breakdown within ${title}` : 'Tap any section in the chart to view detailed reports.'}
                 </p>
-                <div className="space-y-8">
+                <div className="space-y-6 xl:space-y-8">
                   {modalActiveDetails ? (
                     <>
                       <div className="flex items-center gap-5">
@@ -313,36 +386,36 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
                           className="inline-block w-6 h-6 rounded-full"
                           style={{ backgroundColor: modalActiveDetails.color }}
                         />
-                        <span className="text-4xl font-extrabold text-gray-900">
+                        <span className="text-3xl sm:text-4xl font-extrabold text-gray-900">
                           {modalActiveDetails.value} reports
                         </span>
                       </div>
-                      <p className="text-2xl text-gray-600">
+                      <p className="text-lg sm:text-xl xl:text-2xl text-gray-600">
                         Share of total reports: <span className="font-semibold text-gray-900">{modalActiveDetails.percentage}%</span>
                       </p>
-                      <p className="text-2xl text-gray-600">
+                      <p className="text-lg sm:text-xl xl:text-2xl text-gray-600">
                         Total reports analysed: <span className="font-semibold text-gray-900">{totalReports}</span>
                       </p>
                       {modalActiveDetails.reports.length > 0 ? (
-                        <div className="border border-gray-200 rounded-3xl divide-y divide-gray-100 max-h-[32rem] overflow-y-auto">
+                        <div className="border border-gray-200 rounded-3xl divide-y divide-gray-100 max-h-[32rem] xl:max-h-[36rem] overflow-y-auto">
                           {modalActiveDetails.reports.map((report, index) => (
                             <div key={`${report.id || report.reportId || index}-${index}`} className="p-6 hover:bg-gray-50 transition-colors duration-150">
                               <div className="flex items-center justify-between mb-3">
-                                <span className="text-lg font-semibold uppercase tracking-wide text-gray-500">
+                                <span className="text-base sm:text-lg font-semibold uppercase tracking-wide text-gray-500">
                                   {report.status || 'Status Unknown'}
                                 </span>
-                                <span className="text-lg text-gray-400">
+                                <span className="text-sm sm:text-base text-gray-400">
                                   {formatDate(report.date || report.createdAt || report.reportedAt)}
                                 </span>
                               </div>
-                              <p className="text-xl text-gray-900 font-semibold mb-3">
+                              <p className="text-lg sm:text-xl text-gray-900 font-semibold mb-3">
                                 {report.description || 'No description provided.'}
                               </p>
-                              <p className="text-lg text-gray-500">
+                              <p className="text-base sm:text-lg text-gray-500">
                                 Location: <span className="font-semibold text-gray-700">{report.location || 'Not specified'}</span>
                               </p>
                               {report.severity && (
-                                <p className="text-lg text-gray-500 mt-1">
+                                <p className="text-base sm:text-lg text-gray-500 mt-1">
                                   Severity: <span className="font-semibold text-gray-700">{report.severity}</span>
                                 </p>
                               )}
@@ -350,31 +423,78 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-2xl text-gray-500">No detailed reports available for this category.</p>
+                        <p className="text-lg sm:text-xl xl:text-2xl text-gray-500">No detailed reports available for this category.</p>
                       )}
                     </>
                   ) : (
-                    <div className="text-2xl text-gray-500 space-y-4">
-                      <p>Select a slice to see the underlying reports.</p>
-                      <p>Total reports analysed: <span className="font-semibold text-gray-900">{totalReports}</span></p>
-                    </div>
+                    <>
+                      <div className="text-lg sm:text-xl xl:text-2xl text-gray-500 space-y-4">
+                        <p>Select a slice to see the underlying reports.</p>
+                        <p>Total reports analysed: <span className="font-semibold text-gray-900">{totalReports}</span></p>
+                      </div>
+                      {sortedCrimeTypes.length > 0 && (
+                        <div className="space-y-4">
+                          <h4 className="text-base sm:text-lg font-semibold text-gray-600 uppercase tracking-wide">
+                            Top crime categories
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {sortedCrimeTypes.slice(0, 6).map(({ label, value, color, percentage }) => (
+                              <div key={label} className="rounded-2xl border border-gray-200 bg-gray-50 p-5 flex flex-col gap-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3">
+                                    <span
+                                      className="inline-flex h-3 w-3 rounded-full"
+                                      style={{ backgroundColor: color }}
+                                    />
+                                    <span className="font-semibold text-gray-900 text-base sm:text-lg">
+                                      {label}
+                                    </span>
+                                  </div>
+                                  <span className="text-sm sm:text-base font-medium text-gray-500">
+                                    {percentage}%
+                                  </span>
+                                </div>
+                                <div className="text-sm sm:text-base text-gray-600">
+                                  {value} reports
+                                </div>
+                                <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{
+                                      width: `${Math.min(Number(percentage), 100)}%`,
+                                      backgroundColor: color
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
-              <div className="flex-[1.1] min-h-[32rem] flex flex-col">
-                <div className="flex-1">
-                  <Pie
-                    ref={modalChartRef}
-                    data={modalChartData}
-                    options={modalOptions}
-                    onClick={handleModalSliceClick}
-                  />
+              <div className={`${chartFlexClass} min-h-0 flex flex-col`}>
+                <div className="flex-1 min-h-0 flex items-center justify-center">
+                  <div
+                    ref={modalChartContainerRef}
+                    className="w-full"
+                    style={pieWrapperStyle}
+                  >
+                    <Pie
+                      ref={modalChartRef}
+                      data={modalChartData}
+                      options={modalOptions}
+                      onClick={handleModalSliceClick}
+                    />
+                  </div>
                 </div>
                 {labels.length > 1 && (
-                  <div className="flex flex-wrap items-center justify-center gap-6 pt-12">
+                  <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 pt-8 xl:pt-12">
                     <button
                       type="button"
-                      className="inline-flex items-center justify-center px-10 py-5 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-2xl hover:bg-gray-200 transition-colors duration-150"
+                      className="inline-flex items-center justify-center px-8 sm:px-10 py-4 sm:py-5 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-lg sm:text-xl xl:text-2xl hover:bg-gray-200 transition-colors duration-150"
                       onClick={(event) => {
                         event.stopPropagation()
                         handlePrevSlice()
@@ -384,7 +504,7 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
                     </button>
                     <button
                       type="button"
-                      className="inline-flex items-center justify-center px-10 py-5 rounded-2xl bg-gray-900 text-white font-semibold text-2xl hover:bg-gray-800 transition-colors duration-150"
+                      className="inline-flex items-center justify-center px-8 sm:px-10 py-4 sm:py-5 rounded-2xl bg-gray-900 text-white font-semibold text-lg sm:text-xl xl:text-2xl hover:bg-gray-800 transition-colors duration-150"
                       onClick={(event) => {
                         event.stopPropagation()
                         handleNextSlice()
