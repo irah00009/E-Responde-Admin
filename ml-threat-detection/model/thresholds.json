@@ -1,26 +1,26 @@
 {
   "Immediate": {
-    "threshold": 0.15000000000000002,
-    "avg_similarity": 0.257502792493338,
-    "min_similarity": 0.15120834052351723,
-    "max_similarity": 0.3474123052964919
+    "threshold": 0.35,
+    "avg_similarity": 0.25327763894707184,
+    "min_similarity": 0.08019511039677239,
+    "max_similarity": 0.3197642992396267
   },
   "High": {
-    "threshold": 0.15000000000000002,
-    "avg_similarity": 0.24985086342806137,
-    "min_similarity": 0.1484018542258015,
-    "max_similarity": 0.3934734617266571
+    "threshold": 0.3,
+    "avg_similarity": 0.24521123237753933,
+    "min_similarity": 0.06912703317910913,
+    "max_similarity": 0.39175303599980243
   },
   "Moderate": {
     "threshold": 0.20000000000000004,
-    "avg_similarity": 0.24304394680266306,
-    "min_similarity": 0.14099315370454,
-    "max_similarity": 0.3435119719654301
+    "avg_similarity": 0.24388730679600734,
+    "min_similarity": 0.13872326498761584,
+    "max_similarity": 0.36732184358514613
   },
   "Low": {
-    "threshold": 0.20000000000000004,
-    "avg_similarity": 0.24783925476968563,
-    "min_similarity": 0.13381969522383833,
-    "max_similarity": 0.3527633396343607
+    "threshold": 0.15000000000000002,
+    "avg_similarity": 0.24757994179425652,
+    "min_similarity": 0.14275429998198436,
+    "max_similarity": 0.349013424997894
   }
 }

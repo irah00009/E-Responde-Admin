@@ -1458,90 +1458,93 @@ function Dashboard({ onNavigateToReport, onNavigateToSOSAlert, onNavigateToFires
       const db = getDatabase(app);
       let reclassifiedCount = 0;
       
-      // Reclassify ALL reports based on ML predictions
+      // Classify/Reclassify ALL reports based on ML predictions
       for (const analysisResult of analysisResults) {
         const report = reports.find(r => r.id === analysisResult.reportId);
         if (!report) continue;
         
         const predictedSeverity = analysisResult.threatAnalysis.severity;
-        const originalSeverity = (report.severity || 'moderate').toLowerCase();
         const normalizedPredictedSeverity = predictedSeverity.toLowerCase();
         
-        // Reclassify if ML prediction differs from current severity
-        // Only processes new reports (existing reports remain untouched)
-        if (normalizedPredictedSeverity !== originalSeverity) {
-          try {
-            const reportRef = ref(db, `civilian/civilian crime reports/${report.id}`);
-            
-            // Update report with ML-predicted severity
-            const updateData = {
-              severity: normalizedPredictedSeverity, // Store as lowercase for consistency
-              mlReclassified: true,
-              mlReclassifiedAt: new Date().toISOString(),
-              originalSeverity: originalSeverity,
-              predictedSeverity: predictedSeverity,
-              threatAnalysis: {
-                ...analysisResult.threatAnalysis,
-                reclassificationReason: `ML model reclassified from ${originalSeverity} to ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`
-              }
+        // Check if report has an existing severity (from admin dashboard form)
+        // Mobile app reports won't have severity, so this will be initial classification
+        const hasExistingSeverity = report.severity != null && report.severity !== undefined && report.severity !== '';
+        const existingSeverity = hasExistingSeverity ? report.severity.toLowerCase() : null;
+        
+        // Determine if this is initial classification or reclassification
+        const isInitialClassification = !hasExistingSeverity;
+        const isReclassification = hasExistingSeverity && normalizedPredictedSeverity !== existingSeverity;
+        
+        try {
+          const reportRef = ref(db, `civilian/civilian crime reports/${report.id}`);
+          const updateData = {};
+          
+          if (isInitialClassification) {
+            // Mobile app report: Set initial severity from ML prediction
+            updateData.severity = normalizedPredictedSeverity;
+            updateData.mlClassified = true;
+            updateData.mlClassifiedAt = new Date().toISOString();
+            updateData.predictedSeverity = predictedSeverity;
+            updateData.threatAnalysis = {
+              ...analysisResult.threatAnalysis,
+              classificationReason: `ML model classified as ${predictedSeverity} based on description (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`
             };
             
-            // If it's a threat, also mark it as such
-            if (analysisResult.threatAnalysis.isThreat) {
-              updateData.threatDetected = true;
-              updateData.aiEscalated = true;
-              if (predictedSeverity === 'Immediate' || predictedSeverity === 'High') {
-                updateData.escalatedAt = new Date().toISOString();
-                updateData.escalationDetails = {
-                  threatKeywords: analysisResult.threatAnalysis.threats || [],
-                  confidence: analysisResult.threatAnalysis.confidence,
-                  reason: analysisResult.threatAnalysis.reason,
-                  mlClassification: predictedSeverity
-                };
-              }
-            }
-            
-            await update(reportRef, updateData);
+            console.log(`🎯 ML Initial Classification: Report ${report.id} - Classified as ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`);
             reclassifiedCount++;
             
-            console.log(`📊 ML Reclassification: Report ${report.id} - ${originalSeverity} → ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`);
-            
-          } catch (error) {
-            console.error(`Failed to reclassify report ${report.id}:`, error);
-          }
-        } else {
-          // Severity matches, but still update threat analysis metadata
-          try {
-            const reportRef = ref(db, `civilian/civilian crime reports/${report.id}`);
-            const updateData = {
-              threatAnalysis: analysisResult.threatAnalysis,
-              mlAnalyzed: true,
-              mlAnalyzedAt: new Date().toISOString()
+          } else if (isReclassification) {
+            // Admin dashboard report: Reclassify if ML prediction differs
+            updateData.severity = normalizedPredictedSeverity;
+            updateData.mlReclassified = true;
+            updateData.mlReclassifiedAt = new Date().toISOString();
+            updateData.originalSeverity = existingSeverity;
+            updateData.predictedSeverity = predictedSeverity;
+            updateData.threatAnalysis = {
+              ...analysisResult.threatAnalysis,
+              reclassificationReason: `ML model reclassified from ${existingSeverity} to ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`
             };
             
-            if (analysisResult.threatAnalysis.isThreat) {
-              updateData.threatDetected = true;
-              if (predictedSeverity === 'Immediate' || predictedSeverity === 'High') {
-                updateData.aiEscalated = true;
-                updateData.escalatedAt = new Date().toISOString();
-              }
-            }
+            console.log(`📊 ML Reclassification: Report ${report.id} - ${existingSeverity} → ${predictedSeverity} (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`);
+            reclassifiedCount++;
             
-            await update(reportRef, updateData);
+          } else {
+            // Severity matches existing, but still update threat analysis metadata
+            updateData.threatAnalysis = analysisResult.threatAnalysis;
+            updateData.mlAnalyzed = true;
+            updateData.mlAnalyzedAt = new Date().toISOString();
+            
             console.log(`✅ ML Confirmation: Report ${report.id} - Severity ${predictedSeverity} confirmed (confidence: ${(analysisResult.threatAnalysis.confidence * 100).toFixed(1)}%)`);
-            
-          } catch (error) {
-            console.error(`Failed to update threat analysis for report ${report.id}:`, error);
           }
+          
+          // Add threat detection flags if it's a threat
+          if (analysisResult.threatAnalysis.isThreat) {
+            updateData.threatDetected = true;
+            updateData.aiEscalated = true;
+            if (predictedSeverity === 'Immediate' || predictedSeverity === 'High') {
+              updateData.escalatedAt = new Date().toISOString();
+              updateData.escalationDetails = {
+                threatKeywords: analysisResult.threatAnalysis.threats || [],
+                confidence: analysisResult.threatAnalysis.confidence,
+                reason: analysisResult.threatAnalysis.reason,
+                mlClassification: predictedSeverity
+              };
+            }
+          }
+          
+          await update(reportRef, updateData);
+          
+        } catch (error) {
+          console.error(`Failed to update report ${report.id}:`, error);
         }
       }
       
-      console.log(`✅ ML Threat Detection completed: ${reclassifiedCount} report(s) reclassified, ${escalated.length} threat(s) detected`);
+      console.log(`✅ ML Threat Detection completed: ${reclassifiedCount} report(s) classified/reclassified, ${escalated.length} threat(s) detected`);
       
       if (reclassifiedCount === 0 && reports.length > 0) {
-        console.warn('⚠️ Warning: No reports were reclassified. This could mean:');
-        console.warn('   - ML predictions matched current severity');
-        console.warn('   - Or there was an error during reclassification');
+        console.warn('⚠️ Warning: No reports were classified/reclassified. This could mean:');
+        console.warn('   - ML predictions matched existing severity');
+        console.warn('   - Or there was an error during classification');
         console.warn('   Check the console above for any errors.');
       }
       
