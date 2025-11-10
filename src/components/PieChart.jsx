@@ -362,7 +362,10 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
             }
           }}
         >
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-[90vw] xl:max-w-[100rem] relative flex flex-col max-h-[92vh] min-h-[70vh] overflow-y-auto overflow-x-hidden">
+          <div
+            className="bg-white rounded-[2rem] shadow-2xl w-full relative flex flex-col overflow-hidden"
+            style={{ width: 'min(90vw, 1100px)', height: 'min(85vh, 720px)' }}
+          >
             <button
               type="button"
               className="absolute top-5 right-6 text-gray-400 hover:text-gray-600 text-4xl leading-none"
@@ -370,7 +373,7 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
             >
               ×
             </button>
-            <div className={`flex flex-col ${hasModalSelection ? 'lg:flex-row' : 'xl:flex-row'} gap-10 xl:gap-16 h-full overflow-hidden p-8 sm:p-10 lg:p-12 xl:p-14`}>
+            <div className={`flex flex-col ${hasModalSelection ? 'lg:flex-row' : 'xl:flex-row'} gap-10 xl:gap-16 h-full overflow-y-auto p-8 sm:p-10 lg:p-12 xl:p-14`}>
               <div className={detailsWrapperClass}>
                 <h3 className="text-3xl sm:text-4xl xl:text-5xl font-extrabold text-gray-900 mb-6 xl:mb-8">
                   {modalActiveDetails ? modalActiveDetails.label : title}
@@ -505,6 +508,7 @@ const PieChart = ({ data = [], title = "Crime Type Distribution" }) => {
                     <button
                       type="button"
                       className="inline-flex items-center justify-center px-8 sm:px-10 py-4 sm:py-5 rounded-2xl bg-gray-900 text-white font-semibold text-lg sm:text-xl xl:text-2xl hover:bg-gray-800 transition-colors duration-150"
+                      style={{ color: '#ffffff' }}
                       onClick={(event) => {
                         event.stopPropagation()
                         handleNextSlice()
